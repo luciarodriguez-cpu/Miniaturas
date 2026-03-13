@@ -106,6 +106,21 @@ def _parse_dimensions_portes(value: Any) -> str:
     return "\n".join(normalized)
 
 
+
+
+def _get_svg_iframe_height(svg_markup: str, default_height: int = 420) -> int:
+    match = re.search(r'viewBox="[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)"', svg_markup)
+    if not match:
+        return default_height
+
+    view_width = float(match.group(1))
+    view_height = float(match.group(2))
+    if view_width <= 0 or view_height <= 0:
+        return default_height
+
+    estimated_height = int((view_height / view_width) * 420 + 40)
+    return max(320, min(900, estimated_height))
+
 def _row_to_svg_params(row: pd.Series) -> dict[str, Any]:
     tipo_mueble = _parse_tipo_mueble(row.get(COLUMN_TIPO, "S"))
 
@@ -173,7 +188,8 @@ for start in range(0, len(df), cards_per_row):
                 params = _row_to_svg_params(row)
                 svg_markup = generar_svg_mueble(**params)
 
-                st.components.v1.html(svg_markup, height=260, scrolling=False)
+                svg_height = _get_svg_iframe_height(svg_markup)
+                st.components.v1.html(svg_markup, height=svg_height, scrolling=False)
                 st.caption(nombre_producto)
 
                 safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", nombre_producto).strip("_") or "miniatura"
