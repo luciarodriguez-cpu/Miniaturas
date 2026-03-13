@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 import re
+from typing import Any
 from uuid import uuid4
+
+
+ESPESOR_ESTANDAR_MM = 19.0
 
 
 @dataclass
@@ -11,9 +16,13 @@ class MuebleSVGInput:
     alto_mm: float
     fondo_mm: float
     num_baldas: int = 0
-    con_puerta: bool = False
-    apertura_puerta_px: float = 45.0
-    espesor_mm: float = 19.0
+    num_puertas: int = 0
+    num_cajones: int = 0
+    dimensions_portes: str | list[str] | None = None
+    num_patas: int = 0
+    altura_patas: float = 0.0
+    tipo_mueble: str = "S"
+    espesor_mm: float = ESPESOR_ESTANDAR_MM
     color_hex: str = "#FFFFFF"
 
 
@@ -22,48 +31,44 @@ def generar_svg_mueble(
     alto_mm: float,
     fondo_mm: float,
     num_baldas: int = 0,
-    con_puerta: bool = False,
-    apertura_puerta_px: float = 45.0,
-    espesor_mm: float = 19.0,
-    color_hex: str = "#FFFFFF",
+    num_puertas: int = 0,
+    num_cajones: int = 0,
+    dimensions_portes: str | list[str] | None = None,
+    num_patas: int = 0,
+    altura_patas: float = 0,
+    tipo_mueble: str = "S",
 ) -> str:
     """
-    Genera un SVG de mueble abierto paramétrico.
-    Si con_puerta=True, superpone una puerta abierta por delante sin
-    modificar la estructura base del mueble.
+    Genera un SVG isométrico del mueble respetando la proyección existente.
 
-    Reglas:
-    - Base geométrica tomada del generador de mueble abierto
-    - Espesor tablero por defecto: 19 mm
-    - La puerta se superpone por delante
-    - La estructura del mueble no se redibuja ni se altera
+    Orden de dibujo:
+    1) estructura abierta, 2) baldas, 3) frentes (cajones/puertas), 4) patas.
     """
 
-    _validar_inputs(
-        ancho_mm=ancho_mm,
-        alto_mm=alto_mm,
-        fondo_mm=fondo_mm,
-        num_baldas=num_baldas,
-        espesor_mm=espesor_mm,
-    )
+    ancho_mm = _to_positive_float(ancho_mm, fallback=600.0)
+    alto_mm = _to_positive_float(alto_mm, fallback=800.0)
+    fondo_mm = _to_positive_float(fondo_mm, fallback=350.0)
+    num_baldas = _to_non_negative_int(num_baldas)
+    num_puertas = _to_non_negative_int(num_puertas)
+    num_cajones = _to_non_negative_int(num_cajones)
+    num_patas = _to_non_negative_int(num_patas)
+    altura_patas = _to_non_negative_float(altura_patas)
+    tipo_mueble = _normalizar_tipo(tipo_mueble)
 
-    color_relleno = _normalizar_hex(color_hex)
+    espesor_mm = ESPESOR_ESTANDAR_MM
+    color_relleno = _normalizar_hex("#FFFFFF")
     color_linea = _color_contraste(color_relleno)
 
     uid = uuid4().hex[:8]
     clase_relleno = f"f_{uid}"
     clase_linea = f"s_{uid}"
 
-    # =========================================================
-    # PROYECCION
-    # =========================================================
+    # Proyección base (sin cambios respecto al generador original)
     x0 = 170.0
     y0 = 110.0
 
     px_por_mm_x = 0.50
     px_por_mm_y = 0.525
-
-    # Vista ligeramente frontal
     fondo_dx_por_mm = 0.152
     fondo_dy_por_mm = 0.061
 
@@ -75,99 +80,89 @@ def generar_svg_mueble(
     espesor_px_y = max(10.0, espesor_mm * px_por_mm_y)
     espesor_px_x = max(10.0, espesor_mm * px_por_mm_x)
 
-    # =========================================================
-    # PUNTOS EXTERIORES
-    # =========================================================
+    # Puntos exteriores
     x_front_left = x0
     y_front_top = y0
-
     x_front_right = x_front_left + ancho_px
     x_back_left = x_front_left + dx_fondo
     x_back_right = x_front_right + dx_fondo
-
     y_back = y_front_top - dy_fondo
     y_suelo = y_front_top + alto_px
 
-    # =========================================================
-    # CARAS INTERIORES
-    # =========================================================
+    # Caras interiores
     x_inner_left_front = x_front_left + espesor_px_x
     x_inner_right_front = x_front_right - espesor_px_x
     x_inner_back_left = x_back_left + espesor_px_x
     x_right_side_outer_back = x_back_right
 
-    # =========================================================
-    # TAPA
-    # =========================================================
+    # Tapa
     y_tapa_top_front = y_front_top
     y_tapa_bottom_front = y_tapa_top_front + espesor_px_y
-
     y_tapa_top_back = y_back
     y_tapa_bottom_back = y_tapa_top_back + espesor_px_y
 
-    # =========================================================
-    # BASE
-    # =========================================================
+    # Base
     y_base_bottom_front = y_suelo
     y_base_top_front = y_base_bottom_front - espesor_px_y
-
     y_base_bottom_back = y_base_bottom_front - dy_fondo
     y_base_top_back = y_base_top_front - dy_fondo
 
-    # =========================================================
-    # BALDAS EQUIDISTANTES
-    # =========================================================
-    hueco_libre_front = y_base_top_front - y_tapa_bottom_front
-    separacion_front = hueco_libre_front / (num_baldas + 1) if num_baldas > 0 else 0.0
-
-    baldas: list[dict[str, float]] = []
-    for i in range(num_baldas):
-        y_sup_front = y_tapa_bottom_front + separacion_front * (i + 1)
-        y_inf_front = y_sup_front + espesor_px_y
-
-        y_sup_back = y_sup_front - dy_fondo
-        y_inf_back = y_inf_front - dy_fondo
-
-        baldas.append(
-            {
-                "y_sup_front": y_sup_front,
-                "y_inf_front": y_inf_front,
-                "y_sup_back": y_sup_back,
-                "y_inf_back": y_inf_back,
-            }
-        )
-
-    # =========================================================
-    # PIEZA TRASERA
-    # =========================================================
+    # Trasera
     x_trasera_left = x_inner_back_left
     x_trasera_right = x_back_right - espesor_px_x
     y_trasera_top = y_tapa_bottom_back
     y_trasera_bottom = y_base_top_back
 
-    # =========================================================
-    # COLECCIONES SVG
-    # =========================================================
+    # Baldas equidistantes
+    baldas = _calcular_baldas(
+        num_baldas=num_baldas,
+        y_tapa_bottom_front=y_tapa_bottom_front,
+        y_base_top_front=y_base_top_front,
+        espesor_px_y=espesor_px_y,
+        dy_fondo=dy_fondo,
+    )
+
+    # Frentes (cajones debajo, puertas encima)
+    alturas_frentes_mm = _resolver_alturas_frentes(
+        num_puertas=num_puertas,
+        num_cajones=num_cajones,
+        dimensions_portes=dimensions_portes,
+        alto_mm=alto_mm,
+    )
+    frentes = _calcular_frentes(
+        alturas_frentes_mm=alturas_frentes_mm,
+        num_cajones=num_cajones,
+        num_puertas=num_puertas,
+        y_base_top_front=y_base_top_front,
+        y_tapa_bottom_front=y_tapa_bottom_front,
+        px_por_mm_y=px_por_mm_y,
+    )
+
+    patas = _calcular_patas(
+        tipo_mueble=tipo_mueble,
+        num_patas=num_patas,
+        altura_patas_mm=altura_patas,
+        x_left=x_front_left,
+        x_right=x_front_right,
+        y_base_bottom=y_base_bottom_front,
+        px_por_mm_y=px_por_mm_y,
+    )
+
     rellenos: list[str] = []
     lineas: list[str] = []
 
     def add_line(x1: float, y1: float, x2: float, y2: float, clase: str | None = None) -> None:
-        if clase is None:
-            clase = clase_linea
+        cls = clase or clase_linea
         lineas.append(
-            f'<line class="{clase}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>'
+            f'<line class="{cls}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>'
         )
 
     def add_polygon(puntos: list[tuple[float, float]], clase: str | None = None) -> None:
-        if clase is None:
-            clase = clase_relleno
+        cls = clase or clase_relleno
         p = " ".join(f"{x:.1f},{y:.1f}" for x, y in puntos)
-        rellenos.append(f'<polygon class="{clase}" points="{p}"/>')
+        rellenos.append(f'<polygon class="{cls}" points="{p}"/>')
 
-    # =========================================================
-    # RELLENOS - MUEBLE ABIERTO
-    # =========================================================
-    # Tapa superior
+    # 1) Estructura del mueble abierto
     add_polygon(
         [
             (x_front_left, y_tapa_top_front),
@@ -176,8 +171,6 @@ def generar_svg_mueble(
             (x_back_left, y_tapa_top_back),
         ]
     )
-
-    # Espesores visibles de la tapa
     add_polygon(
         [
             (x_front_left, y_tapa_top_front),
@@ -210,8 +203,6 @@ def generar_svg_mueble(
             (x_back_right - espesor_px_x, y_tapa_top_back),
         ]
     )
-
-    # Laterales frontales
     add_polygon(
         [
             (x_front_left, y_tapa_top_front),
@@ -228,8 +219,6 @@ def generar_svg_mueble(
             (x_inner_right_front, y_suelo),
         ]
     )
-
-    # Lateral derecho exterior en perspectiva
     add_polygon(
         [
             (x_front_right, y_tapa_top_front),
@@ -238,8 +227,6 @@ def generar_svg_mueble(
             (x_front_right, y_suelo),
         ]
     )
-
-    # Trasera interior
     add_polygon(
         [
             (x_trasera_left, y_trasera_top),
@@ -248,8 +235,6 @@ def generar_svg_mueble(
             (x_trasera_left, y_trasera_bottom),
         ]
     )
-
-    # Lateral izquierdo interior
     add_polygon(
         [
             (x_inner_left_front, y_tapa_bottom_front),
@@ -258,8 +243,6 @@ def generar_svg_mueble(
             (x_inner_left_front, y_base_top_front),
         ]
     )
-
-    # Base
     add_polygon(
         [
             (x_inner_left_front, y_base_top_front),
@@ -277,7 +260,53 @@ def generar_svg_mueble(
         ]
     )
 
-    # Baldas
+    add_line(x_front_left, y_tapa_top_front, x_front_right, y_tapa_top_front)
+    add_line(x_front_right, y_tapa_top_front, x_back_right, y_tapa_top_back)
+    add_line(x_front_left, y_tapa_top_front, x_back_left, y_tapa_top_back)
+    add_line(x_back_left, y_tapa_top_back, x_back_right, y_tapa_top_back)
+    add_line(x_inner_left_front, y_tapa_bottom_front, x_inner_right_front, y_tapa_bottom_front)
+    add_line(x_inner_left_front, y_tapa_top_front, x_inner_left_front, y_tapa_bottom_front)
+    add_line(x_inner_right_front, y_tapa_top_front, x_inner_right_front, y_tapa_bottom_front)
+    add_line(x_front_left, y_tapa_top_front, x_front_left, y_suelo)
+    add_line(x_inner_left_front, y_tapa_top_front, x_inner_left_front, y_suelo)
+    add_line(x_front_left, y_suelo, x_inner_left_front, y_suelo)
+    add_line(x_front_left, y_tapa_top_front, x_inner_left_front, y_tapa_top_front)
+    add_line(x_inner_left_front, y_tapa_top_front, x_inner_back_left, y_tapa_top_back)
+    add_line(x_back_left, y_tapa_top_back, x_inner_back_left, y_tapa_top_back)
+
+    inicio = y_tapa_bottom_front + 1.0
+    if baldas:
+        fin = baldas[0]["y_sup_back"]
+        if fin > inicio:
+            add_line(x_inner_back_left, inicio, x_inner_back_left, fin)
+        for i in range(len(baldas) - 1):
+            inicio_i = baldas[i]["y_inf_front"] + 1.0
+            fin_i = baldas[i + 1]["y_sup_back"]
+            if fin_i > inicio_i:
+                add_line(x_inner_back_left, inicio_i, x_inner_back_left, fin_i)
+        inicio_last = baldas[-1]["y_inf_front"] + 1.0
+        if y_base_top_back > inicio_last:
+            add_line(x_inner_back_left, inicio_last, x_inner_back_left, y_base_top_back)
+    elif y_base_top_back > inicio:
+        add_line(x_inner_back_left, inicio, x_inner_back_left, y_base_top_back)
+
+    add_line(x_front_right, y_tapa_top_front, x_front_right, y_suelo)
+    add_line(x_inner_right_front, y_tapa_top_front, x_inner_right_front, y_suelo)
+    add_line(x_inner_right_front, y_suelo, x_front_right, y_suelo)
+    add_line(x_inner_right_front, y_tapa_top_front, x_front_right, y_tapa_top_front)
+    add_line(x_inner_right_front, y_tapa_top_front, x_back_right - espesor_px_x, y_tapa_top_back)
+    add_line(x_back_right - espesor_px_x, y_tapa_top_back, x_back_right, y_tapa_top_back)
+    add_line(x_front_right, y_tapa_top_front, x_back_right, y_tapa_top_back)
+    add_line(x_right_side_outer_back, y_tapa_top_back, x_right_side_outer_back, y_suelo - dy_fondo)
+    add_line(x_front_right, y_suelo, x_right_side_outer_back, y_suelo - dy_fondo)
+    add_line(x_inner_left_front, y_base_top_front, x_inner_right_front, y_base_top_front)
+    add_line(x_inner_left_front, y_base_top_front, x_inner_back_left, y_base_top_back)
+    add_line(x_inner_back_left, y_base_top_back, x_inner_right_front, y_base_top_back)
+    add_line(x_inner_left_front, y_base_bottom_front, x_inner_right_front, y_base_bottom_front)
+    add_line(x_inner_left_front, y_base_top_front, x_inner_left_front, y_base_bottom_front)
+    add_line(x_inner_right_front, y_base_top_front, x_inner_right_front, y_base_bottom_front)
+
+    # 2) Baldas
     for balda in baldas:
         add_polygon(
             [
@@ -296,156 +325,73 @@ def generar_svg_mueble(
             ]
         )
 
-    # =========================================================
-    # LINEAS - MUEBLE ABIERTO
-    # =========================================================
-    # Tapa
-    add_line(x_front_left, y_tapa_top_front, x_front_right, y_tapa_top_front)
-    add_line(x_front_right, y_tapa_top_front, x_back_right, y_tapa_top_back)
-    add_line(x_front_left, y_tapa_top_front, x_back_left, y_tapa_top_back)
-    add_line(x_back_left, y_tapa_top_back, x_back_right, y_tapa_top_back)
-
-    add_line(x_inner_left_front, y_tapa_bottom_front, x_inner_right_front, y_tapa_bottom_front)
-    add_line(x_inner_left_front, y_tapa_top_front, x_inner_left_front, y_tapa_bottom_front)
-    add_line(x_inner_right_front, y_tapa_top_front, x_inner_right_front, y_tapa_bottom_front)
-
-    # Lateral izquierdo
-    add_line(x_front_left, y_tapa_top_front, x_front_left, y_suelo)
-    add_line(x_inner_left_front, y_tapa_top_front, x_inner_left_front, y_suelo)
-    add_line(x_front_left, y_suelo, x_inner_left_front, y_suelo)
-
-    add_line(x_front_left, y_tapa_top_front, x_inner_left_front, y_tapa_top_front)
-    add_line(x_inner_left_front, y_tapa_top_front, x_inner_back_left, y_tapa_top_back)
-    add_line(x_back_left, y_tapa_top_back, x_inner_back_left, y_tapa_top_back)
-
-    # Arista trasera derecha del lateral izquierdo, cortada por baldas
-    inicio = y_tapa_bottom_front + 1.0
-
-    if num_baldas > 0:
-        fin = baldas[0]["y_sup_back"]
-        if fin > inicio:
-            add_line(x_inner_back_left, inicio, x_inner_back_left, fin)
-
-        for i in range(num_baldas - 1):
-            inicio_i = baldas[i]["y_inf_front"] + 1.0
-            fin_i = baldas[i + 1]["y_sup_back"]
-            if fin_i > inicio_i:
-                add_line(x_inner_back_left, inicio_i, x_inner_back_left, fin_i)
-
-        inicio_last = baldas[-1]["y_inf_front"] + 1.0
-        fin_last = y_base_top_back
-        if fin_last > inicio_last:
-            add_line(x_inner_back_left, inicio_last, x_inner_back_left, fin_last)
-    else:
-        fin = y_base_top_back
-        if fin > inicio:
-            add_line(x_inner_back_left, inicio, x_inner_back_left, fin)
-
-    # Lateral derecho
-    add_line(x_front_right, y_tapa_top_front, x_front_right, y_suelo)
-    add_line(x_inner_right_front, y_tapa_top_front, x_inner_right_front, y_suelo)
-    add_line(x_inner_right_front, y_suelo, x_front_right, y_suelo)
-
-    add_line(x_inner_right_front, y_tapa_top_front, x_front_right, y_tapa_top_front)
-    add_line(x_inner_right_front, y_tapa_top_front, x_back_right - espesor_px_x, y_tapa_top_back)
-    add_line(x_back_right - espesor_px_x, y_tapa_top_back, x_back_right, y_tapa_top_back)
-    add_line(x_front_right, y_tapa_top_front, x_back_right, y_tapa_top_back)
-
-    add_line(x_right_side_outer_back, y_tapa_top_back, x_right_side_outer_back, y_suelo - dy_fondo)
-    add_line(x_front_right, y_suelo, x_right_side_outer_back, y_suelo - dy_fondo)
-
-    # Baldas
-    for balda in baldas:
         add_line(x_inner_left_front, balda["y_sup_front"], x_inner_right_front, balda["y_sup_front"])
         add_line(x_inner_left_front, balda["y_sup_front"], x_inner_back_left, balda["y_sup_back"])
         add_line(x_inner_back_left, balda["y_sup_back"], x_inner_right_front, balda["y_sup_back"])
-
         add_line(x_inner_left_front, balda["y_inf_front"], x_inner_right_front, balda["y_inf_front"])
         add_line(x_inner_left_front, balda["y_sup_front"], x_inner_left_front, balda["y_inf_front"])
         add_line(x_inner_right_front, balda["y_sup_front"], x_inner_right_front, balda["y_inf_front"])
 
-    # Base
-    add_line(x_inner_left_front, y_base_top_front, x_inner_right_front, y_base_top_front)
-    add_line(x_inner_left_front, y_base_top_front, x_inner_back_left, y_base_top_back)
-    add_line(x_inner_back_left, y_base_top_back, x_inner_right_front, y_base_top_back)
+    # 3) Frentes (independientes con espesor 19mm)
+    for frente in frentes:
+        y_top = frente["y_top"]
+        y_bottom = frente["y_bottom"]
+        frontal_dx = max(espesor_mm * fondo_dx_por_mm, 4.2)
+        frontal_dy = max(espesor_mm * fondo_dy_por_mm, 1.8)
 
-    add_line(x_inner_left_front, y_base_bottom_front, x_inner_right_front, y_base_bottom_front)
-    add_line(x_inner_left_front, y_base_top_front, x_inner_left_front, y_base_bottom_front)
-    add_line(x_inner_right_front, y_base_top_front, x_inner_right_front, y_base_bottom_front)
+        # Si solo hay una puerta sin cajones, puede ir levemente abierta
+        apertura_extra = 0.0
+        if frente["tipo"] == "puerta" and len(frentes) == 1:
+            apertura_extra = 18.0
 
-    # =========================================================
-    # PUERTA SUPERPUESTA OPCIONAL
-    # =========================================================
-    if con_puerta:
-        # Apertura visual: cuanto más pequeño el valor final, más abierta
-        x_puerta_dcha_sup = x_front_right - apertura_puerta_px
-        x_puerta_dcha_inf = x_front_right - apertura_puerta_px
+        x_right = x_front_right + apertura_extra
 
-        # Cara frontal de la puerta
         add_polygon(
             [
-                (x_front_left, y_front_top),
-                (x_puerta_dcha_sup, y_front_top + 30.0),
-                (x_puerta_dcha_inf, y_suelo + 30.0),
-                (x_front_left, y_suelo),
+                (x_front_left, y_top),
+                (x_right, y_top),
+                (x_right, y_bottom),
+                (x_front_left, y_bottom),
             ]
         )
+        add_line(x_front_left, y_top, x_right, y_top)
+        add_line(x_right, y_top, x_right, y_bottom)
+        add_line(x_right, y_bottom, x_front_left, y_bottom)
+        add_line(x_front_left, y_bottom, x_front_left, y_top)
 
-        add_line(x_front_left, y_front_top, x_puerta_dcha_sup, y_front_top + 30.0)
-        add_line(x_puerta_dcha_sup, y_front_top + 30.0, x_puerta_dcha_inf, y_suelo + 30.0)
-        add_line(x_puerta_dcha_inf, y_suelo + 30.0, x_front_left, y_suelo)
-        add_line(x_front_left, y_suelo, x_front_left, y_front_top)
-
-        # Espesor puerta hacia delante, visible por el lado derecho
-        # Se proyecta con la misma lógica de profundidad.
-        # Ajuste visual leve para que el canto no quede demasiado fino.
-        dx_puerta = max(espesor_mm * fondo_dx_por_mm, 4.2)
-        dy_puerta = max(espesor_mm * fondo_dy_por_mm, 1.8)
-
+        add_line(x_right, y_top, x_right + frontal_dx, y_top - frontal_dy)
+        add_line(x_right, y_bottom, x_right + frontal_dx, y_bottom - frontal_dy)
         add_line(
-            x_puerta_dcha_sup,
-            y_front_top + 30.0,
-            x_puerta_dcha_sup + dx_puerta,
-            y_front_top + 30.0 - dy_puerta,
-        )
-        add_line(
-            x_puerta_dcha_inf,
-            y_suelo + 30.0,
-            x_puerta_dcha_inf + dx_puerta,
-            y_suelo + 30.0 - dy_puerta,
-        )
-        add_line(
-            x_puerta_dcha_sup + dx_puerta,
-            y_front_top + 30.0 - dy_puerta,
-            x_puerta_dcha_inf + dx_puerta,
-            y_suelo + 30.0 - dy_puerta,
+            x_right + frontal_dx,
+            y_top - frontal_dy,
+            x_right + frontal_dx,
+            y_bottom - frontal_dy,
         )
 
-        # Canto superior visible
-        add_line(
-            x_front_left,
-            y_front_top,
-            x_front_left + dx_puerta,
-            y_front_top - dy_puerta,
-        )
-        add_line(
-            x_front_left + dx_puerta,
-            y_front_top - dy_puerta,
-            x_puerta_dcha_sup + dx_puerta,
-            y_front_top + 30.0 - dy_puerta,
-        )
+    # 4) Patas
+    for pata in patas:
+        x = pata["x"]
+        y_top = pata["y_top"]
+        y_bottom = pata["y_bottom"]
+        ancho_pata = pata["ancho"]
 
-    # =========================================================
-    # VIEWBOX
-    # =========================================================
-    min_x = min(0.0, x_front_left - 110.0)
+        add_polygon(
+            [
+                (x, y_top),
+                (x + ancho_pata, y_top),
+                (x + ancho_pata, y_bottom),
+                (x, y_bottom),
+            ]
+        )
+        add_line(x, y_top, x + ancho_pata, y_top)
+        add_line(x + ancho_pata, y_top, x + ancho_pata, y_bottom)
+        add_line(x + ancho_pata, y_bottom, x, y_bottom)
+        add_line(x, y_bottom, x, y_top)
+
     min_y = min(0.0, y_back - 40.0)
-    max_x = max(x_back_right + 120.0, x_front_right + 140.0)
-    max_y = max(y_suelo + 120.0, y_base_bottom_front + 150.0)
-
-    if con_puerta:
-        max_x = max(max_x, x_front_right + 120.0)
-        max_y = max(max_y, y_suelo + 140.0)
+    max_y = max(y_suelo + 120.0, y_base_bottom_front + 120.0 + (altura_patas * px_por_mm_y))
+    min_x = min(0.0, x_front_left - 110.0)
+    max_x = max(x_back_right + 160.0, x_front_right + 160.0)
 
     view_w = max_x - min_x
     view_h = max_y - min_y
@@ -463,23 +409,210 @@ def generar_svg_mueble(
     return "\n".join(svg)
 
 
-def _validar_inputs(
-    ancho_mm: float,
-    alto_mm: float,
-    fondo_mm: float,
+def generar_svg_mueble_desde_csv_row(row: dict[str, Any]) -> str:
+    """Atajo robusto para consumir filas de CSV ya parseadas."""
+
+    return generar_svg_mueble(
+        ancho_mm=row.get("ancho_mm"),
+        alto_mm=row.get("alto_mm"),
+        fondo_mm=row.get("fondo_mm"),
+        num_baldas=row.get("num_baldas", 0),
+        num_puertas=row.get("num_puertas", 0),
+        num_cajones=row.get("num_cajones", 0),
+        dimensions_portes=row.get("dimensions_portes"),
+        num_patas=row.get("num_patas", 0),
+        altura_patas=row.get("altura_patas", 0),
+        tipo_mueble=row.get("tipo_mueble", "S"),
+    )
+
+
+def _calcular_baldas(
     num_baldas: int,
-    espesor_mm: float,
-) -> None:
-    if ancho_mm <= 0:
-        raise ValueError("ancho_mm debe ser mayor que 0.")
-    if alto_mm <= 0:
-        raise ValueError("alto_mm debe ser mayor que 0.")
-    if fondo_mm <= 0:
-        raise ValueError("fondo_mm debe ser mayor que 0.")
-    if num_baldas < 0:
-        raise ValueError("num_baldas no puede ser negativo.")
-    if espesor_mm <= 0:
-        raise ValueError("espesor_mm debe ser mayor que 0.")
+    y_tapa_bottom_front: float,
+    y_base_top_front: float,
+    espesor_px_y: float,
+    dy_fondo: float,
+) -> list[dict[str, float]]:
+    if num_baldas <= 0:
+        return []
+
+    hueco_libre = y_base_top_front - y_tapa_bottom_front
+    separacion = hueco_libre / (num_baldas + 1)
+    baldas: list[dict[str, float]] = []
+
+    for i in range(num_baldas):
+        y_sup_front = y_tapa_bottom_front + separacion * (i + 1)
+        y_inf_front = y_sup_front + espesor_px_y
+        baldas.append(
+            {
+                "y_sup_front": y_sup_front,
+                "y_inf_front": y_inf_front,
+                "y_sup_back": y_sup_front - dy_fondo,
+                "y_inf_back": y_inf_front - dy_fondo,
+            }
+        )
+    return baldas
+
+
+def _resolver_alturas_frentes(
+    num_puertas: int,
+    num_cajones: int,
+    dimensions_portes: str | list[str] | None,
+    alto_mm: float,
+) -> list[float]:
+    total_frentes = num_puertas + num_cajones
+    if total_frentes <= 0:
+        return []
+
+    alturas = _parse_alturas_portes(dimensions_portes)
+    if not alturas:
+        igual = max(80.0, alto_mm / total_frentes)
+        return [igual for _ in range(total_frentes)]
+
+    if len(alturas) < total_frentes:
+        alturas.extend([alturas[-1]] * (total_frentes - len(alturas)))
+
+    return alturas[:total_frentes]
+
+
+def _calcular_frentes(
+    alturas_frentes_mm: list[float],
+    num_cajones: int,
+    num_puertas: int,
+    y_base_top_front: float,
+    y_tapa_bottom_front: float,
+    px_por_mm_y: float,
+) -> list[dict[str, float | str]]:
+    total = num_cajones + num_puertas
+    if total == 0:
+        return []
+
+    alturas_px = [max(12.0, h * px_por_mm_y) for h in alturas_frentes_mm]
+
+    alto_disponible = max(0.0, y_base_top_front - y_tapa_bottom_front)
+    suma = sum(alturas_px)
+    escala = 1.0 if suma <= 0 else min(1.0, alto_disponible / suma)
+    alturas_px = [h * escala for h in alturas_px]
+
+    frentes: list[dict[str, float | str]] = []
+    y_cursor = y_base_top_front
+
+    # Cajones abajo -> arriba
+    for i in range(num_cajones):
+        alto = alturas_px[i] if i < len(alturas_px) else (alto_disponible / total)
+        y_top = max(y_tapa_bottom_front, y_cursor - alto)
+        frentes.append({"tipo": "cajon", "y_top": y_top, "y_bottom": y_cursor})
+        y_cursor = y_top
+
+    # Puertas encima de cajones
+    for j in range(num_puertas):
+        idx = num_cajones + j
+        alto = alturas_px[idx] if idx < len(alturas_px) else (alto_disponible / total)
+        y_top = max(y_tapa_bottom_front, y_cursor - alto)
+        frentes.append({"tipo": "puerta", "y_top": y_top, "y_bottom": y_cursor})
+        y_cursor = y_top
+
+    return frentes
+
+
+def _calcular_patas(
+    tipo_mueble: str,
+    num_patas: int,
+    altura_patas_mm: float,
+    x_left: float,
+    x_right: float,
+    y_base_bottom: float,
+    px_por_mm_y: float,
+) -> list[dict[str, float]]:
+    if tipo_mueble != "P" or num_patas <= 0 or altura_patas_mm <= 0:
+        return []
+
+    altura_px = altura_patas_mm * px_por_mm_y
+    ancho_pata = 14.0
+    margen = 18.0
+
+    pos_candidatas = [
+        x_left + margen,
+        x_right - margen - ancho_pata,
+        x_left + (x_right - x_left) * 0.33,
+        x_left + (x_right - x_left) * 0.66,
+    ]
+    posiciones = pos_candidatas[: min(num_patas, len(pos_candidatas))]
+
+    return [
+        {
+            "x": x,
+            "y_top": y_base_bottom,
+            "y_bottom": y_base_bottom + altura_px,
+            "ancho": ancho_pata,
+        }
+        for x in posiciones
+    ]
+
+
+def _parse_alturas_portes(dimensions_portes: str | list[str] | None) -> list[float]:
+    if not dimensions_portes:
+        return []
+
+    if isinstance(dimensions_portes, list):
+        partes = [str(v) for v in dimensions_portes]
+    else:
+        texto = str(dimensions_portes)
+        partes = [p.strip() for p in re.split(r"[\n;,]+", texto) if p.strip()]
+
+    alturas: list[float] = []
+    for item in partes:
+        # Busca patrón "L * H" y toma H
+        m = re.search(r"(\d+(?:[\.,]\d+)?)\s*[xX*]\s*(\d+(?:[\.,]\d+)?)", item)
+        if m:
+            altura = _to_non_negative_float(m.group(2).replace(",", "."))
+        else:
+            nums = re.findall(r"\d+(?:[\.,]\d+)?", item)
+            if not nums:
+                continue
+            altura = _to_non_negative_float(nums[-1].replace(",", "."))
+
+        if altura > 0:
+            alturas.append(_redondear_decena(altura))
+
+    return alturas
+
+
+def _redondear_decena(valor: float) -> float:
+    return float(int(math.floor((valor + 5.0) / 10.0) * 10))
+
+
+def _to_non_negative_int(value: Any, fallback: int = 0) -> int:
+    try:
+        if value in (None, ""):
+            return fallback
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _to_positive_float(value: Any, fallback: float) -> float:
+    try:
+        if value in (None, ""):
+            return fallback
+        parsed = float(value)
+        return parsed if parsed > 0 else fallback
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _to_non_negative_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        if value in (None, ""):
+            return fallback
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _normalizar_tipo(tipo_mueble: Any) -> str:
+    tipo = str(tipo_mueble or "S").strip().upper()
+    return "P" if tipo == "P" else "S"
 
 
 def _normalizar_hex(color_hex: str) -> str:
@@ -504,10 +637,12 @@ if __name__ == "__main__":
         alto_mm=800,
         fondo_mm=375,
         num_baldas=2,
-        con_puerta=True,
-        apertura_puerta_px=45.0,
-        espesor_mm=19.0,
-        color_hex="#FFFFFF",
+        num_puertas=1,
+        num_cajones=2,
+        dimensions_portes="450 * 200\n450 * 300\n450 * 280",
+        num_patas=4,
+        altura_patas=100,
+        tipo_mueble="P",
     )
     with open("mueble.svg", "w", encoding="utf-8") as f:
         f.write(svg)
