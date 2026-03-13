@@ -14,19 +14,39 @@ st.title("Miniaturas de muebles")
 st.write("Sube un CSV para generar las miniaturas SVG automáticamente")
 
 
-COLUMN_PRODUCTO = "Produit (nom de l'article)"
-COLUMN_ANCHO = "Largeur (mm)"
-COLUMN_ALTO = "hauteur (mm) sans pieds"
-COLUMN_FONDO = "Profondeur (mm) sans façade"
-COLUMN_ALTURA_PATAS = "Ht pieds (mm) 100 en standard"
-COLUMN_TIPO = "Meuble posé (P)/ Suspendu (S)"
-COLUMN_NUM_PUERTAS = "Nombre de portes"
-COLUMN_DIMENSIONES = "Dimensions portes  (de bas en haut)  L * H en mm"
-COLUMN_NUM_BALDAS = "Nombre d'étagères"
-COLUMN_NUM_PATAS = "Nombre de pieds"
-COLUMN_NUM_CAJONES = "Nombre de tiroirs"
+COLUMN_PRODUCTO = "producto"
+COLUMN_ANCHO = "ancho_mm"
+COLUMN_ALTO = "alto_mm"
+COLUMN_FONDO = "fondo_mm"
+COLUMN_ALTURA_PATAS = "altura_patas_mm"
+COLUMN_TIPO = "tipo_mueble"
+COLUMN_NUM_PUERTAS = "num_puertas"
+COLUMN_DIMENSIONES = "dimensions_portes"
+COLUMN_NUM_BALDAS = "num_baldas"
+COLUMN_NUM_PATAS = "num_patas"
+COLUMN_NUM_CAJONES = "num_cajones"
+
+COLUMN_MAPPING = {
+    "Produit (nom de l'article)": COLUMN_PRODUCTO,
+    "Largeur (mm)": COLUMN_ANCHO,
+    "hauteur (mm) sans pieds": COLUMN_ALTO,
+    "Profondeur (mm) sans façade": COLUMN_FONDO,
+    "Ht pieds (mm) 100 en standard": COLUMN_ALTURA_PATAS,
+    "Meuble posé (P)/ Suspendu (S)": COLUMN_TIPO,
+    "Nombre de portes": COLUMN_NUM_PUERTAS,
+    "Dimensions portes (de bas en haut) L * H en mm": COLUMN_DIMENSIONES,
+    "Nombre d'étagères": COLUMN_NUM_BALDAS,
+    "Nombre de pieds": COLUMN_NUM_PATAS,
+    "Nombre de tiroirs": COLUMN_NUM_CAJONES,
+}
 
 REQUIRED_COLUMNS = [COLUMN_PRODUCTO, COLUMN_ANCHO, COLUMN_ALTO, COLUMN_FONDO]
+
+
+def _normalize_column_name(name: Any) -> str:
+    normalized = str(name).replace("\n", " ")
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
 
 
 def _to_non_negative_int(value: Any, default: int = 0) -> int:
@@ -114,10 +134,24 @@ except Exception as exc:
     st.error(f"No se pudo leer el CSV: {exc}")
     st.stop()
 
+df = df.rename(columns=lambda col: _normalize_column_name(col))
+st.write(df.columns.tolist())
+
+missing_original_columns = [col for col in COLUMN_MAPPING if col not in df.columns]
+if missing_original_columns:
+    st.error(
+        "Faltan columnas obligatorias en el CSV tras normalizar encabezados: "
+        + ", ".join(missing_original_columns)
+    )
+    st.stop()
+
+df = df.rename(columns=COLUMN_MAPPING)
+
 missing_columns = [col for col in REQUIRED_COLUMNS if col not in df.columns]
 if missing_columns:
     st.error(
-        "Faltan columnas obligatorias en el CSV: " + ", ".join(missing_columns)
+        "Faltan columnas obligatorias en el CSV tras mapear encabezados: "
+        + ", ".join(missing_columns)
     )
     st.stop()
 
