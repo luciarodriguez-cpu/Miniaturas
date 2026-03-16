@@ -147,7 +147,8 @@ def generar_svg_mueble(
     # 4) Frentes opacos (cajones abajo, puertas arriba).
     total_frentes = num_cajones + num_puertas
     if total_frentes > 0:
-        alto_util = max(40.0, h - 2 * espesor_mm)
+        # Los frentes deben tapar visualmente tapa y base (altura completa visible).
+        alto_util = max(40.0, h)
         alturas = _resolver_alturas_frentes(
             num_puertas=num_puertas,
             num_cajones=num_cajones,
@@ -168,11 +169,11 @@ def generar_svg_mueble(
             alturas = [a * factor for a in alturas]
 
         bloques = (["cajon"] * num_cajones) + (["puerta"] * num_puertas)
-        z_cursor = z0 + espesor_mm
+        z_cursor = z0
         divisiones: list[float] = []
 
         for _tipo, alto_bloque in zip(bloques, alturas):
-            z_next = min(z1 - espesor_mm, z_cursor + alto_bloque)
+            z_next = min(z1, z_cursor + alto_bloque)
             if z_next <= z_cursor:
                 continue
             add_polygon(frentes_svg, [(0, d, z_cursor), (w, d, z_cursor), (w, d, z_next), (0, d, z_next)], clase_frente)
