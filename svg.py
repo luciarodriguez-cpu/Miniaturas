@@ -62,8 +62,9 @@ def generar_svg_mueble(
 
     px_por_mm_x = 0.50
     px_por_mm_y = 0.525
-    fondo_dx_por_mm = 0.152
-    fondo_dy_por_mm = 0.061
+    # Proyección ligeramente más abierta para mostrar mejor el lateral derecho.
+    fondo_dx_por_mm = 0.205
+    fondo_dy_por_mm = 0.082
 
     ancho_px = ancho_mm * px_por_mm_x
     alto_px = alto_mm * px_por_mm_y
@@ -263,11 +264,14 @@ def generar_svg_mueble(
         min_y = 0.0
         max_y = 100.0
 
-    margen = 18.0
-    min_x -= margen
-    min_y -= margen
-    max_x += margen
-    max_y += margen
+    # Margen extra para evitar recortes, especialmente en patas/base y zona superior.
+    margen_x = 30.0
+    margen_y_superior = 42.0
+    margen_y_inferior = 52.0
+    min_x -= margen_x
+    min_y -= margen_y_superior
+    max_x += margen_x
+    max_y += margen_y_inferior
 
     view_w = max_x - min_x
     view_h = max_y - min_y

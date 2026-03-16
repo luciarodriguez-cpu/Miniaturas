@@ -167,7 +167,12 @@ for start in range(0, len(df), cards_per_row):
                 svg_markup = generar_svg_mueble(**_row_to_svg_params(row))
                 generated_cards.append({"name": nombre_producto, "svg": svg_markup})
 
-                st.components.v1.html(svg_markup, height=320, scrolling=False)
+                svg_card_html = f"""
+                <div style="height:360px;display:flex;align-items:center;justify-content:center;">
+                    {svg_markup}
+                </div>
+                """
+                st.components.v1.html(svg_card_html, height=360, scrolling=False)
                 st.caption(nombre_producto)
             except Exception as exc:
                 st.warning(f"No se pudo procesar '{nombre_producto}': {exc}")
