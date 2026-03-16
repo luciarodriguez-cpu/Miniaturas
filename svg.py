@@ -60,11 +60,13 @@ def generar_svg_mueble(
     x0 = 170.0
     y0 = 110.0
 
-    px_por_mm_x = 0.50
-    px_por_mm_y = 0.525
-    # Proyección ligeramente más abierta para mostrar mejor el lateral derecho.
-    fondo_dx_por_mm = 0.205
-    fondo_dy_por_mm = 0.082
+    # Proyección isométrica real: los 3 ejes comparten escala,
+    # con profundidad a 30° respecto al eje horizontal.
+    escala_isometrica = 0.50
+    px_por_mm_x = escala_isometrica
+    px_por_mm_y = escala_isometrica
+    fondo_dx_por_mm = escala_isometrica * math.cos(math.radians(30.0))
+    fondo_dy_por_mm = escala_isometrica * math.sin(math.radians(30.0))
 
     ancho_px = ancho_mm * px_por_mm_x
     alto_px = alto_mm * px_por_mm_y
@@ -135,10 +137,10 @@ def generar_svg_mueble(
     )
 
     rellenos_base: list[str] = []
-    lineas_base: list[str] = []
+    lineas_base: list[tuple[float, float, str]] = []
     rellenos_frente: list[str] = []
     rellenos_patas: list[str] = []
-    lineas_patas: list[str] = []
+    lineas_patas: list[tuple[float, float, str]] = []
 
     min_x = float("inf")
     max_x = float("-inf")
@@ -152,11 +154,19 @@ def generar_svg_mueble(
         min_y = min(min_y, y)
         max_y = max(max_y, y)
 
-    def add_line(target: list[str], x1: float, y1: float, x2: float, y2: float, clase: str | None = None) -> None:
+    def add_line(
+        target: list[tuple[float, float, str]],
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        clase: str | None = None,
+    ) -> None:
         cls = clase or clase_linea
         _track(x1, y1)
         _track(x2, y2)
-        target.append(f'<line class="{cls}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>')
+        linea = f'<line class="{cls}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>'
+        target.append((((x1 + x2) / 2.0), ((y1 + y2) / 2.0), linea))
 
     def add_polygon(target: list[str], puntos: list[tuple[float, float]], clase: str | None = None) -> None:
         cls = clase or clase_relleno
@@ -276,6 +286,8 @@ def generar_svg_mueble(
     view_w = max_x - min_x
     view_h = max_y - min_y
 
+    lineas_ordenadas = [linea for _, _, linea in sorted([*lineas_base, *lineas_patas], key=lambda item: (item[1], item[0]))]
+
     svg = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{min_x:.1f} {min_y:.1f} {view_w:.1f} {view_h:.1f}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">',
         "<style>",
@@ -284,10 +296,9 @@ def generar_svg_mueble(
         f'.{clase_frente}{{fill:#FFFFFF;stroke:#111111;stroke-width:2.2;stroke-linejoin:round;}}',
         "</style>",
         *rellenos_base,
-        *lineas_base,
+        *lineas_ordenadas,
         *rellenos_frente,
         *rellenos_patas,
-        *lineas_patas,
         "</svg>",
     ]
     return "\n".join(svg)
