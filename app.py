@@ -74,10 +74,6 @@ def _parse_tipo_mueble(value: Any) -> str:
 
 
 def _parse_dimensions_portes(value: Any) -> str:
-    """
-    Normaliza dimensiones de frentes al formato texto (una por línea),
-    redondeando la altura (H) a decenas.
-    """
     if value is None or pd.isna(value):
         return ""
 
@@ -107,8 +103,6 @@ def _parse_dimensions_portes(value: Any) -> str:
 
 
 def _row_to_svg_params(row: pd.Series) -> dict[str, Any]:
-    tipo_mueble = _parse_tipo_mueble(row.get(COLUMN_TIPO, "S"))
-
     return {
         "ancho_mm": _to_positive_float(row.get(COLUMN_ANCHO), default=600.0),
         "alto_mm": _to_positive_float(row.get(COLUMN_ALTO), default=800.0),
@@ -119,7 +113,7 @@ def _row_to_svg_params(row: pd.Series) -> dict[str, Any]:
         "dimensions_portes": _parse_dimensions_portes(row.get(COLUMN_DIMENSIONES)),
         "num_patas": _to_non_negative_int(row.get(COLUMN_NUM_PATAS), default=0),
         "altura_patas": _to_positive_float(row.get(COLUMN_ALTURA_PATAS), default=0.0),
-        "tipo_mueble": tipo_mueble,
+        "tipo_mueble": _parse_tipo_mueble(row.get(COLUMN_TIPO, "S")),
     }
 
 
@@ -135,7 +129,6 @@ except Exception as exc:
     st.stop()
 
 df = df.rename(columns=lambda col: _normalize_column_name(col))
-st.write(df.columns.tolist())
 
 missing_original_columns = [col for col in COLUMN_MAPPING if col not in df.columns]
 if missing_original_columns:
@@ -161,28 +154,41 @@ if df.empty:
 
 st.success(f"Productos leídos: {len(df)}")
 
+generated_cards: list[dict[str, str]] = []
 cards_per_row = 3
 for start in range(0, len(df), cards_per_row):
     cols = st.columns(cards_per_row)
     batch = df.iloc[start : start + cards_per_row]
 
-    for col, (row_idx, row) in zip(cols, batch.iterrows()):
+    for col, (_, row) in zip(cols, batch.iterrows()):
         with col:
             nombre_producto = str(row.get(COLUMN_PRODUCTO, "Producto sin nombre")).strip() or "Producto sin nombre"
             try:
-                params = _row_to_svg_params(row)
-                svg_markup = generar_svg_mueble(**params)
+                svg_markup = generar_svg_mueble(**_row_to_svg_params(row))
+                generated_cards.append({"name": nombre_producto, "svg": svg_markup})
 
-                st.components.v1.html(svg_markup, height=260, scrolling=False)
+                st.components.v1.html(svg_markup, height=320, scrolling=False)
                 st.caption(nombre_producto)
-
-                safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", nombre_producto).strip("_") or "miniatura"
-                st.download_button(
-                    "Descargar SVG",
-                    data=svg_markup,
-                    file_name=f"{safe_name}.svg",
-                    mime="image/svg+xml",
-                    key=f"download_{row_idx}_{safe_name}",
-                )
             except Exception as exc:
                 st.warning(f"No se pudo procesar '{nombre_producto}': {exc}")
+
+if not generated_cards:
+    st.error("No se pudo generar ninguna miniatura SVG válida.")
+    st.stop()
+
+selected_default = len(generated_cards) - 1
+selected_idx = st.selectbox(
+    "Mueble para descargar",
+    options=range(len(generated_cards)),
+    index=selected_default,
+    format_func=lambda i: generated_cards[i]["name"],
+)
+selected_card = generated_cards[selected_idx]
+safe_name = re.sub(r"[^a-zA-Z0-9_-]+", "_", selected_card["name"]).strip("_") or "miniatura"
+st.download_button(
+    "Descargar SVG",
+    data=selected_card["svg"],
+    file_name=f"{safe_name}.svg",
+    mime="image/svg+xml",
+    key="download_single_svg",
+)
