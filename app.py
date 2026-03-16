@@ -156,6 +156,8 @@ st.success(f"Productos leídos: {len(df)}")
 
 generated_cards: list[dict[str, str]] = []
 cards_per_row = 3
+card_height_px = 390
+
 for start in range(0, len(df), cards_per_row):
     cols = st.columns(cards_per_row)
     batch = df.iloc[start : start + cards_per_row]
@@ -168,13 +170,28 @@ for start in range(0, len(df), cards_per_row):
                 generated_cards.append({"name": nombre_producto, "svg": svg_markup})
 
                 svg_card_html = f"""
-                <div style="height:420px;display:flex;align-items:center;justify-content:center;padding:8px;box-sizing:border-box;">
-                    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+                <div style="
+                    height:{card_height_px}px;
+                    width:100%;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    padding:12px;
+                    box-sizing:border-box;
+                    overflow:visible;
+                ">
+                    <div style="
+                        width:100%;
+                        height:100%;
+                        display:flex;
+                        align-items:center;
+                        justify-content:center;
+                    ">
                         {svg_markup}
                     </div>
                 </div>
                 """
-                st.components.v1.html(svg_card_html, height=420, scrolling=False)
+                st.components.v1.html(svg_card_html, height=card_height_px, scrolling=False)
                 st.caption(nombre_producto)
             except Exception as exc:
                 st.warning(f"No se pudo procesar '{nombre_producto}': {exc}")
