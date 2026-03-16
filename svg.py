@@ -86,7 +86,8 @@ def generar_svg_mueble(
 
     caras: list[str] = []
     patas_svg: list[str] = []
-    frentes_svg: list[str] = []
+    cajones_svg: list[str] = []
+    puertas_svg: list[str] = []
     lineas: list[str] = []
 
     def add_polygon(target: list[str], pts3d: list[tuple[float, float, float]], clase: str) -> None:
@@ -144,10 +145,46 @@ def generar_svg_mueble(
 
     # 3) Patas eliminadas de la representación.
 
+    def _rotar_puerta_izquierda(x: float, y: float, angulo: float) -> tuple[float, float]:
+        y_rel = y - d
+        xr = x * math.cos(angulo) - y_rel * math.sin(angulo)
+        yr = x * math.sin(angulo) + y_rel * math.cos(angulo)
+        return xr, d + yr
+
+    def _agregar_prisma_frente(
+        target: list[str],
+        z_inf: float,
+        z_sup: float,
+        es_puerta: bool,
+        angulo: float,
+    ) -> None:
+        y_trasera = d
+        y_frontal = d + ESPESOR_ESTANDAR_MM
+
+        base = {
+            "bbl": (0.0, y_trasera, z_inf),
+            "bbr": (w, y_trasera, z_inf),
+            "bfl": (0.0, y_frontal, z_inf),
+            "bfr": (w, y_frontal, z_inf),
+            "tbl": (0.0, y_trasera, z_sup),
+            "tbr": (w, y_trasera, z_sup),
+            "tfl": (0.0, y_frontal, z_sup),
+            "tfr": (w, y_frontal, z_sup),
+        }
+
+        if es_puerta:
+            for k, (xv, yv, zv) in list(base.items()):
+                xr, yr = _rotar_puerta_izquierda(xv, yv, angulo)
+                base[k] = (xr, yr, zv)
+
+        add_polygon(target, [base["bfl"], base["bfr"], base["tfr"], base["tfl"]], clase_frente)
+        add_polygon(target, [base["bbr"], base["bfr"], base["tfr"], base["tbr"]], clase_frente)
+        add_polygon(target, [base["tbl"], base["tbr"], base["tfr"], base["tfl"]], clase_frente)
+        add_polygon(target, [base["bbl"], base["bbr"], base["bfr"], base["bfl"]], clase_frente)
+
     # 4) Frentes opacos (cajones abajo, puertas arriba).
     total_frentes = num_cajones + num_puertas
     if total_frentes > 0:
-        # Los frentes deben tapar visualmente tapa y base (altura completa visible).
         alto_util = max(40.0, h)
         alturas = _resolver_alturas_frentes(
             num_puertas=num_puertas,
@@ -170,30 +207,23 @@ def generar_svg_mueble(
 
         bloques = (["cajon"] * num_cajones) + (["puerta"] * num_puertas)
         z_cursor = z0
-        divisiones: list[float] = []
+        angulo_puerta = math.radians(35.0)
 
-        for _tipo, alto_bloque in zip(bloques, alturas):
+        for tipo_bloque, alto_bloque in zip(bloques, alturas):
             z_next = min(z1, z_cursor + alto_bloque)
             if z_next <= z_cursor:
                 continue
-            add_polygon(frentes_svg, [(0, d, z_cursor), (w, d, z_cursor), (w, d, z_next), (0, d, z_next)], clase_frente)
-            divisiones.append(z_next)
+            if tipo_bloque == "cajon":
+                _agregar_prisma_frente(cajones_svg, z_cursor, z_next, es_puerta=False, angulo=0.0)
+            else:
+                _agregar_prisma_frente(puertas_svg, z_cursor, z_next, es_puerta=True, angulo=angulo_puerta)
             z_cursor = z_next
-
-        for z_div in divisiones[:-1]:
-            add_line((0, d, z_div), (w, d, z_div))
 
     # 5) Solo aristas visibles útiles.
     aristas_visibles = [
-        ((0, d, z1), (w, d, z1)),
         ((w, 0, z1), (w, d, z1)),
-        ((w, d, z1), (0, d, z1)),
         ((0, d, z1), (0, 0, z1)),
         ((w, 0, z0), (w, d, z0)),
-        ((w, d, z0), (w, d, z1)),
-        ((0, d, z0), (w, d, z0)),
-        ((0, d, z0), (0, d, z1)),
-        ((w, d, z0), (w, d, z1)),
         ((w, 0, z0), (w, 0, z1)),
     ]
 
@@ -221,7 +251,8 @@ def generar_svg_mueble(
         "</style>",
         *caras,
         *patas_svg,
-        *frentes_svg,
+        *cajones_svg,
+        *puertas_svg,
         *lineas,
         "</svg>",
     ]
