@@ -52,14 +52,14 @@ def generar_svg_mueble(
     color_relleno = _normalizar_hex("#FFFFFF")
     color_linea = "#111111"
 
-    # Isométrica técnica real: frente, lateral derecho y tapa visibles.
+    # Isométrica canónica con ejes: x=ancho, y=fondo, z=altura.
     ang = math.radians(30.0)
     cos30 = math.cos(ang)
     sin30 = math.sin(ang)
     escala = 0.44
 
     ox = 240.0
-    oy = 150.0
+    oy = 420.0
 
     min_x = float("inf")
     max_x = float("-inf")
@@ -74,8 +74,8 @@ def generar_svg_mueble(
         max_y = max(max_y, y)
 
     def proj(x_mm: float, y_mm: float, z_mm: float) -> tuple[float, float]:
-        x = ox + (x_mm - z_mm) * cos30 * escala
-        y = oy + (x_mm + z_mm) * sin30 * escala + y_mm * escala
+        x = ox + (x_mm - y_mm) * cos30 * escala
+        y = oy + (x_mm + y_mm) * sin30 * escala - z_mm * escala
         track(x, y)
         return x, y
 
@@ -89,10 +89,9 @@ def generar_svg_mueble(
     frentes_svg: list[str] = []
     patas_svg: list[str] = []
 
-    def add_polygon(target: list[str], puntos_3d: list[tuple[float, float, float]], clase: str) -> None:
-        pts = [proj(*p) for p in puntos_3d]
-        serial = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
-        target.append(f'<polygon class="{clase}" points="{serial}"/>')
+    def add_polygon(target: list[str], pts3d: list[tuple[float, float, float]], clase: str) -> None:
+        pts = [proj(*p) for p in pts3d]
+        target.append(f'<polygon class="{clase}" points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in pts)}"/>')
 
     def add_line(p1: tuple[float, float, float], p2: tuple[float, float, float]) -> None:
         x1, y1 = proj(*p1)
@@ -100,61 +99,60 @@ def generar_svg_mueble(
         lineas.append(f'<line class="{clase_linea}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>')
 
     w = ancho_mm
-    h = alto_mm
     d = fondo_mm
+    h = alto_mm
 
-    # Caras visibles opacas
-    add_polygon(caras, [(0, 0, 0), (w, 0, 0), (w, 0, d), (0, 0, d)], clase_cara)  # tapa
-    add_polygon(caras, [(w, 0, 0), (w, h, 0), (w, h, d), (w, 0, d)], clase_cara)  # lateral derecho
+    # Caras principales visibles, opacas.
+    add_polygon(caras, [(0, 0, h), (w, 0, h), (w, d, h), (0, d, h)], clase_cara)  # tapa
+    add_polygon(caras, [(w, 0, 0), (w, d, 0), (w, d, h), (w, 0, h)], clase_cara)  # lateral derecho
 
     hay_frentes = (num_puertas + num_cajones) > 0
     if not hay_frentes:
-        add_polygon(caras, [(0, 0, 0), (w, 0, 0), (w, h, 0), (0, h, 0)], clase_cara)
+        add_polygon(caras, [(0, 0, 0), (w, 0, 0), (w, 0, h), (0, 0, h)], clase_cara)
 
-    # Contorno técnico
-    add_line((0, 0, 0), (w, 0, 0))
-    add_line((w, 0, 0), (w, h, 0))
-    add_line((w, h, 0), (0, h, 0))
-    add_line((0, h, 0), (0, 0, 0))
+    # Aristas visibles (sin mallado trasero para evitar sensación wireframe/deformada).
+    edges_visibles = [
+        # Frente
+        ((0, 0, 0), (w, 0, 0)),
+        ((w, 0, 0), (w, 0, h)),
+        ((w, 0, h), (0, 0, h)),
+        ((0, 0, h), (0, 0, 0)),
+        # Tapa
+        ((0, 0, h), (0, d, h)),
+        ((0, d, h), (w, d, h)),
+        ((w, d, h), (w, 0, h)),
+        # Lateral derecho
+        ((w, 0, 0), (w, d, 0)),
+        ((w, d, 0), (w, d, h)),
+        # Unión inferior de profundidad para leer volumen
+        ((0, 0, 0), (0, d, 0)),
+    ]
+    for e1, e2 in edges_visibles:
+        add_line(e1, e2)
 
-    add_line((0, 0, 0), (0, 0, d))
-    add_line((w, 0, 0), (w, 0, d))
-    add_line((w, h, 0), (w, h, d))
-    add_line((0, h, 0), (0, h, d))
-
-    add_line((0, 0, d), (w, 0, d))
-    add_line((w, 0, d), (w, h, d))
-    add_line((w, h, d), (0, h, d))
-    add_line((0, h, d), (0, 0, d))
-
-    # Apertura frontal si no hay puertas/cajones: baldas visibles en isométrica
+    # Interior frontal (solo si no hay frentes).
     if not hay_frentes:
-        x0 = espesor_mm
-        x1 = max(x0 + 1.0, w - espesor_mm)
-        y0 = espesor_mm
-        y1 = max(y0 + 1.0, h - espesor_mm)
-        zf = 0.0
+        xi0 = espesor_mm
+        xi1 = max(xi0 + 1.0, w - espesor_mm)
+        zi0 = espesor_mm
+        zi1 = max(zi0 + 1.0, h - espesor_mm)
+        yi0 = 0.0
+        yi1 = max(yi0 + 1.0, d - espesor_mm)
 
-        add_polygon(caras, [(x0, y0, zf), (x1, y0, zf), (x1, y1, zf), (x0, y1, zf)], clase_cara)
-        add_line((x0, y0, zf), (x1, y0, zf))
-        add_line((x1, y0, zf), (x1, y1, zf))
-        add_line((x1, y1, zf), (x0, y1, zf))
-        add_line((x0, y1, zf), (x0, y0, zf))
+        add_polygon(caras, [(xi0, yi0, zi0), (xi1, yi0, zi0), (xi1, yi0, zi1), (xi0, yi0, zi1)], clase_cara)
 
         if num_baldas > 0:
-            hueco = y1 - y0
-            paso = hueco / (num_baldas + 1)
-            esp = max(8.0, espesor_mm * 0.8)
+            libre = zi1 - zi0
+            paso = libre / (num_baldas + 1)
+            esp_balda = max(8.0, espesor_mm * 0.8)
             for i in range(num_baldas):
-                ys = y0 + (i + 1) * paso
-                add_polygon(
-                    caras,
-                    [(x0, ys, 0), (x1, ys, 0), (x1, ys + esp, d - espesor_mm), (x0, ys + esp, d - espesor_mm)],
-                    clase_cara,
-                )
-                add_line((x0, ys, 0), (x1, ys, 0))
+                zsup = zi0 + (i + 1) * paso
+                zinf = min(zi1, zsup + esp_balda)
+                add_polygon(caras, [(xi0, yi0, zsup), (xi1, yi0, zsup), (xi1, yi1, zsup), (xi0, yi1, zsup)], clase_cara)
+                add_polygon(caras, [(xi0, yi0, zsup), (xi0, yi0, zinf), (xi1, yi0, zinf), (xi1, yi0, zsup)], clase_cara)
+                add_line((xi0, yi0, zsup), (xi1, yi0, zsup))
 
-    # Frentes opacos (puertas/cajones)
+    # Frentes opacos (cajones + puertas).
     alturas_frentes_mm = _resolver_alturas_frentes(
         num_puertas=num_puertas,
         num_cajones=num_cajones,
@@ -164,9 +162,9 @@ def generar_svg_mueble(
 
     total_frentes = num_puertas + num_cajones
     if total_frentes > 0:
-        y_tapa = espesor_mm
-        y_base = h - espesor_mm
-        alto_disponible = max(20.0, y_base - y_tapa)
+        z_tapa = espesor_mm
+        z_base = h - espesor_mm
+        alto_disponible = max(20.0, z_base - z_tapa)
 
         alturas = alturas_frentes_mm[:total_frentes] if alturas_frentes_mm else [alto_disponible / total_frentes] * total_frentes
         if len(alturas) < total_frentes:
@@ -174,51 +172,48 @@ def generar_svg_mueble(
 
         suma = max(1.0, sum(alturas))
         escala_alt = min(1.0, alto_disponible / suma)
-        alturas = [hmm * escala_alt for hmm in alturas]
+        alturas = [a * escala_alt for a in alturas]
 
-        y_cursor = y_base
+        z_cursor = z_base
         for alto_frente in alturas:
-            y_top = max(y_tapa, y_cursor - alto_frente)
-            add_polygon(frentes_svg, [(0, y_top, 0), (w, y_top, 0), (w, y_cursor, 0), (0, y_cursor, 0)], clase_frente)
-            y_cursor = y_top
+            z_top = max(z_tapa, z_cursor - alto_frente)
+            add_polygon(frentes_svg, [(0, 0, z_top), (w, 0, z_top), (w, 0, z_cursor), (0, 0, z_cursor)], clase_frente)
+            z_cursor = z_top
 
-    # Patas: prismas pequeños para mantener isométrica y evitar recortes inferiores
+    # Patas como prismas en el frontal-inferior.
     patas = _calcular_patas(
         tipo_mueble=tipo_mueble,
         num_patas=num_patas,
         altura_patas_mm=altura_patas,
         x_left=0.0,
         x_right=w,
-        y_base_bottom=h,
+        y_base_bottom=0.0,
         px_por_mm_y=1.0,
     )
     for pata in patas:
         x = pata["x"]
-        y_top = pata["y_top"]
-        y_bottom = pata["y_bottom"]
+        z_top = 0.0
+        z_bottom = -max(0.0, pata["y_bottom"])
         ancho = pata["ancho"]
         fondo_pata = min(max(10.0, d * 0.12), 24.0)
 
-        add_polygon(patas_svg, [(x, y_top, 0), (x + ancho, y_top, 0), (x + ancho, y_bottom, 0), (x, y_bottom, 0)], clase_cara)
-        add_polygon(patas_svg, [(x + ancho, y_top, 0), (x + ancho, y_top, fondo_pata), (x + ancho, y_bottom, fondo_pata), (x + ancho, y_bottom, 0)], clase_cara)
-        add_line((x, y_top, 0), (x + ancho, y_top, 0))
-        add_line((x + ancho, y_top, 0), (x + ancho, y_bottom, 0))
-        add_line((x + ancho, y_bottom, 0), (x, y_bottom, 0))
-        add_line((x, y_bottom, 0), (x, y_top, 0))
+        add_polygon(patas_svg, [(x, 0, z_top), (x + ancho, 0, z_top), (x + ancho, 0, z_bottom), (x, 0, z_bottom)], clase_cara)
+        add_polygon(patas_svg, [(x + ancho, 0, z_top), (x + ancho, fondo_pata, z_top), (x + ancho, fondo_pata, z_bottom), (x + ancho, 0, z_bottom)], clase_cara)
+        add_line((x, 0, z_top), (x + ancho, 0, z_top))
+        add_line((x + ancho, 0, z_top), (x + ancho, 0, z_bottom))
+        add_line((x + ancho, 0, z_bottom), (x, 0, z_bottom))
+        add_line((x, 0, z_bottom), (x, 0, z_top))
 
     if min_x == float("inf"):
         min_x, min_y, max_x, max_y = 0.0, 0.0, 100.0, 100.0
 
     min_x -= 42.0
     max_x += 42.0
-    min_y -= 46.0
-    max_y += 58.0
-
-    view_w = max_x - min_x
-    view_h = max_y - min_y
+    min_y -= 52.0
+    max_y += 62.0
 
     svg = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{min_x:.1f} {min_y:.1f} {view_w:.1f} {view_h:.1f}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">',
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{min_x:.1f} {min_y:.1f} {max_x - min_x:.1f} {max_y - min_y:.1f}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">',
         "<style>",
         f'.{clase_cara}{{fill:{color_relleno};stroke:{color_linea};stroke-width:2.2;stroke-linejoin:round;}}',
         f'.{clase_linea}{{stroke:{color_linea};stroke-width:2.0;fill:none;stroke-linecap:round;stroke-linejoin:round;}}',
