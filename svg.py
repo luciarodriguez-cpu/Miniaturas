@@ -52,253 +52,182 @@ def generar_svg_mueble(
     color_relleno = _normalizar_hex("#FFFFFF")
     color_linea = "#111111"
 
-    uid = uuid4().hex[:8]
-    clase_relleno = f"f_{uid}"
-    clase_linea = f"s_{uid}"
-    clase_frente = f"fr_{uid}"
+    # Isométrica técnica real: frente, lateral derecho y tapa visibles.
+    ang = math.radians(30.0)
+    cos30 = math.cos(ang)
+    sin30 = math.sin(ang)
+    escala = 0.44
 
-    x0 = 170.0
-    y0 = 110.0
-
-    # Proyección isométrica real: los 3 ejes comparten escala,
-    # con profundidad a 30° respecto al eje horizontal.
-    escala_isometrica = 0.50
-    px_por_mm_x = escala_isometrica
-    px_por_mm_y = escala_isometrica
-    fondo_dx_por_mm = escala_isometrica * math.cos(math.radians(30.0))
-    fondo_dy_por_mm = escala_isometrica * math.sin(math.radians(30.0))
-
-    ancho_px = ancho_mm * px_por_mm_x
-    alto_px = alto_mm * px_por_mm_y
-    dx_fondo = fondo_mm * fondo_dx_por_mm
-    dy_fondo = fondo_mm * fondo_dy_por_mm
-
-    espesor_px_y = max(10.0, espesor_mm * px_por_mm_y)
-    espesor_px_x = max(10.0, espesor_mm * px_por_mm_x)
-
-    x_front_left = x0
-    y_front_top = y0
-    x_front_right = x_front_left + ancho_px
-    x_back_left = x_front_left + dx_fondo
-    x_back_right = x_front_right + dx_fondo
-    y_back = y_front_top - dy_fondo
-    y_suelo = y_front_top + alto_px
-
-    x_inner_left_front = x_front_left + espesor_px_x
-    x_inner_right_front = x_front_right - espesor_px_x
-    x_inner_back_left = x_back_left + espesor_px_x
-    x_right_side_outer_back = x_back_right
-
-    y_tapa_top_front = y_front_top
-    y_tapa_bottom_front = y_tapa_top_front + espesor_px_y
-    y_tapa_top_back = y_back
-    y_tapa_bottom_back = y_tapa_top_back + espesor_px_y
-
-    y_base_bottom_front = y_suelo
-    y_base_top_front = y_base_bottom_front - espesor_px_y
-    y_base_top_back = y_base_top_front - dy_fondo
-
-    x_trasera_left = x_inner_back_left
-    x_trasera_right = x_back_right - espesor_px_x
-    y_trasera_top = y_tapa_bottom_back
-    y_trasera_bottom = y_base_top_back
-
-    baldas = _calcular_baldas(
-        num_baldas=num_baldas,
-        y_tapa_bottom_front=y_tapa_bottom_front,
-        y_base_top_front=y_base_top_front,
-        espesor_px_y=espesor_px_y,
-        dy_fondo=dy_fondo,
-    )
-
-    alturas_frentes_mm = _resolver_alturas_frentes(
-        num_puertas=num_puertas,
-        num_cajones=num_cajones,
-        dimensions_portes=dimensions_portes,
-        alto_mm=alto_mm,
-    )
-    frentes = _calcular_frentes(
-        alturas_frentes_mm=alturas_frentes_mm,
-        num_cajones=num_cajones,
-        num_puertas=num_puertas,
-        y_base_top_front=y_base_top_front,
-        y_tapa_bottom_front=y_tapa_bottom_front,
-        px_por_mm_y=px_por_mm_y,
-    )
-
-    patas = _calcular_patas(
-        tipo_mueble=tipo_mueble,
-        num_patas=num_patas,
-        altura_patas_mm=altura_patas,
-        x_left=x_front_left,
-        x_right=x_front_right,
-        y_base_bottom=y_base_bottom_front,
-        px_por_mm_y=px_por_mm_y,
-    )
-
-    rellenos_base: list[str] = []
-    lineas_base: list[tuple[float, float, str]] = []
-    rellenos_frente: list[str] = []
-    rellenos_patas: list[str] = []
-    lineas_patas: list[tuple[float, float, str]] = []
+    ox = 240.0
+    oy = 150.0
 
     min_x = float("inf")
     max_x = float("-inf")
     min_y = float("inf")
     max_y = float("-inf")
 
-    def _track(x: float, y: float) -> None:
+    def track(x: float, y: float) -> None:
         nonlocal min_x, max_x, min_y, max_y
         min_x = min(min_x, x)
         max_x = max(max_x, x)
         min_y = min(min_y, y)
         max_y = max(max_y, y)
 
-    def add_line(
-        target: list[tuple[float, float, str]],
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
-        clase: str | None = None,
-    ) -> None:
-        cls = clase or clase_linea
-        _track(x1, y1)
-        _track(x2, y2)
-        linea = f'<line class="{cls}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>'
-        target.append((((x1 + x2) / 2.0), ((y1 + y2) / 2.0), linea))
+    def proj(x_mm: float, y_mm: float, z_mm: float) -> tuple[float, float]:
+        x = ox + (x_mm - z_mm) * cos30 * escala
+        y = oy + (x_mm + z_mm) * sin30 * escala + y_mm * escala
+        track(x, y)
+        return x, y
 
-    def add_polygon(target: list[str], puntos: list[tuple[float, float]], clase: str | None = None) -> None:
-        cls = clase or clase_relleno
-        for x, y in puntos:
-            _track(x, y)
-        p = " ".join(f"{x:.1f},{y:.1f}" for x, y in puntos)
-        target.append(f'<polygon class="{cls}" points="{p}"/>')
+    uid = uuid4().hex[:8]
+    clase_cara = f"f_{uid}"
+    clase_linea = f"s_{uid}"
+    clase_frente = f"fr_{uid}"
 
-    # Estructura abierta + líneas interiores
-    add_polygon(rellenos_base, [(x_front_left, y_tapa_top_front), (x_front_right, y_tapa_top_front), (x_back_right, y_tapa_top_back), (x_back_left, y_tapa_top_back)])
-    add_polygon(rellenos_base, [(x_front_left, y_tapa_top_front), (x_inner_left_front, y_tapa_top_front), (x_inner_left_front, y_tapa_bottom_front), (x_front_left, y_tapa_bottom_front)])
-    add_polygon(rellenos_base, [(x_inner_left_front, y_tapa_top_front), (x_back_left, y_tapa_top_back), (x_inner_back_left, y_tapa_top_back), (x_inner_left_front, y_tapa_bottom_front)])
-    add_polygon(rellenos_base, [(x_inner_right_front, y_tapa_top_front), (x_front_right, y_tapa_top_front), (x_front_right, y_tapa_bottom_front), (x_inner_right_front, y_tapa_bottom_front)])
-    add_polygon(rellenos_base, [(x_inner_right_front, y_tapa_top_front), (x_front_right, y_tapa_top_front), (x_back_right, y_tapa_top_back), (x_back_right - espesor_px_x, y_tapa_top_back)])
-    add_polygon(rellenos_base, [(x_front_left, y_tapa_top_front), (x_inner_left_front, y_tapa_top_front), (x_inner_left_front, y_suelo), (x_front_left, y_suelo)])
-    add_polygon(rellenos_base, [(x_inner_right_front, y_tapa_top_front), (x_front_right, y_tapa_top_front), (x_front_right, y_suelo), (x_inner_right_front, y_suelo)])
-    add_polygon(rellenos_base, [(x_front_right, y_tapa_top_front), (x_back_right, y_tapa_top_back), (x_right_side_outer_back, y_suelo - dy_fondo), (x_front_right, y_suelo)])
-    add_polygon(rellenos_base, [(x_trasera_left, y_trasera_top), (x_trasera_right, y_trasera_top), (x_trasera_right, y_trasera_bottom), (x_trasera_left, y_trasera_bottom)])
-    add_polygon(rellenos_base, [(x_inner_left_front, y_tapa_bottom_front), (x_inner_back_left, y_tapa_bottom_back), (x_inner_back_left, y_base_top_back), (x_inner_left_front, y_base_top_front)])
-    add_polygon(rellenos_base, [(x_inner_left_front, y_base_top_front), (x_inner_right_front, y_base_top_front), (x_inner_right_front, y_base_top_back), (x_inner_back_left, y_base_top_back)])
-    add_polygon(rellenos_base, [(x_inner_left_front, y_base_top_front), (x_inner_right_front, y_base_top_front), (x_inner_right_front, y_base_bottom_front), (x_inner_left_front, y_base_bottom_front)])
+    caras: list[str] = []
+    lineas: list[str] = []
+    frentes_svg: list[str] = []
+    patas_svg: list[str] = []
 
-    add_line(lineas_base, x_front_left, y_tapa_top_front, x_front_right, y_tapa_top_front)
-    add_line(lineas_base, x_front_right, y_tapa_top_front, x_back_right, y_tapa_top_back)
-    add_line(lineas_base, x_front_left, y_tapa_top_front, x_back_left, y_tapa_top_back)
-    add_line(lineas_base, x_back_left, y_tapa_top_back, x_back_right, y_tapa_top_back)
-    add_line(lineas_base, x_inner_left_front, y_tapa_bottom_front, x_inner_right_front, y_tapa_bottom_front)
-    add_line(lineas_base, x_inner_left_front, y_tapa_top_front, x_inner_left_front, y_tapa_bottom_front)
-    add_line(lineas_base, x_inner_right_front, y_tapa_top_front, x_inner_right_front, y_tapa_bottom_front)
-    add_line(lineas_base, x_front_left, y_tapa_top_front, x_front_left, y_suelo)
-    add_line(lineas_base, x_inner_left_front, y_tapa_top_front, x_inner_left_front, y_suelo)
-    add_line(lineas_base, x_front_left, y_suelo, x_inner_left_front, y_suelo)
-    add_line(lineas_base, x_front_left, y_tapa_top_front, x_inner_left_front, y_tapa_top_front)
-    add_line(lineas_base, x_inner_left_front, y_tapa_top_front, x_inner_back_left, y_tapa_top_back)
-    add_line(lineas_base, x_back_left, y_tapa_top_back, x_inner_back_left, y_tapa_top_back)
+    def add_polygon(target: list[str], puntos_3d: list[tuple[float, float, float]], clase: str) -> None:
+        pts = [proj(*p) for p in puntos_3d]
+        serial = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        target.append(f'<polygon class="{clase}" points="{serial}"/>')
 
-    inicio = y_tapa_bottom_front + 1.0
-    if baldas:
-        fin = baldas[0]["y_sup_back"]
-        if fin > inicio:
-            add_line(lineas_base, x_inner_back_left, inicio, x_inner_back_left, fin)
-        for i in range(len(baldas) - 1):
-            inicio_i = baldas[i]["y_inf_front"] + 1.0
-            fin_i = baldas[i + 1]["y_sup_back"]
-            if fin_i > inicio_i:
-                add_line(lineas_base, x_inner_back_left, inicio_i, x_inner_back_left, fin_i)
-        inicio_last = baldas[-1]["y_inf_front"] + 1.0
-        if y_base_top_back > inicio_last:
-            add_line(lineas_base, x_inner_back_left, inicio_last, x_inner_back_left, y_base_top_back)
-    elif y_base_top_back > inicio:
-        add_line(lineas_base, x_inner_back_left, inicio, x_inner_back_left, y_base_top_back)
+    def add_line(p1: tuple[float, float, float], p2: tuple[float, float, float]) -> None:
+        x1, y1 = proj(*p1)
+        x2, y2 = proj(*p2)
+        lineas.append(f'<line class="{clase_linea}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>')
 
-    add_line(lineas_base, x_front_right, y_tapa_top_front, x_front_right, y_suelo)
-    add_line(lineas_base, x_inner_right_front, y_tapa_top_front, x_inner_right_front, y_suelo)
-    add_line(lineas_base, x_inner_right_front, y_suelo, x_front_right, y_suelo)
-    add_line(lineas_base, x_inner_right_front, y_tapa_top_front, x_front_right, y_tapa_top_front)
-    add_line(lineas_base, x_inner_right_front, y_tapa_top_front, x_back_right - espesor_px_x, y_tapa_top_back)
-    add_line(lineas_base, x_back_right - espesor_px_x, y_tapa_top_back, x_back_right, y_tapa_top_back)
-    add_line(lineas_base, x_front_right, y_tapa_top_front, x_back_right, y_tapa_top_back)
-    add_line(lineas_base, x_right_side_outer_back, y_tapa_top_back, x_right_side_outer_back, y_suelo - dy_fondo)
-    add_line(lineas_base, x_front_right, y_suelo, x_right_side_outer_back, y_suelo - dy_fondo)
-    add_line(lineas_base, x_inner_left_front, y_base_top_front, x_inner_right_front, y_base_top_front)
-    add_line(lineas_base, x_inner_left_front, y_base_top_front, x_inner_back_left, y_base_top_back)
-    add_line(lineas_base, x_inner_back_left, y_base_top_back, x_inner_right_front, y_base_top_back)
-    add_line(lineas_base, x_inner_left_front, y_base_bottom_front, x_inner_right_front, y_base_bottom_front)
-    add_line(lineas_base, x_inner_left_front, y_base_top_front, x_inner_left_front, y_base_bottom_front)
-    add_line(lineas_base, x_inner_right_front, y_base_top_front, x_inner_right_front, y_base_bottom_front)
+    w = ancho_mm
+    h = alto_mm
+    d = fondo_mm
 
-    for balda in baldas:
-        add_polygon(rellenos_base, [(x_inner_left_front, balda["y_sup_front"]), (x_inner_right_front, balda["y_sup_front"]), (x_inner_right_front, balda["y_sup_back"]), (x_inner_back_left, balda["y_sup_back"])])
-        add_polygon(rellenos_base, [(x_inner_left_front, balda["y_sup_front"]), (x_inner_right_front, balda["y_sup_front"]), (x_inner_right_front, balda["y_inf_front"]), (x_inner_left_front, balda["y_inf_front"])])
+    # Caras visibles opacas
+    add_polygon(caras, [(0, 0, 0), (w, 0, 0), (w, 0, d), (0, 0, d)], clase_cara)  # tapa
+    add_polygon(caras, [(w, 0, 0), (w, h, 0), (w, h, d), (w, 0, d)], clase_cara)  # lateral derecho
 
-        add_line(lineas_base, x_inner_left_front, balda["y_sup_front"], x_inner_right_front, balda["y_sup_front"])
-        add_line(lineas_base, x_inner_left_front, balda["y_sup_front"], x_inner_back_left, balda["y_sup_back"])
-        add_line(lineas_base, x_inner_back_left, balda["y_sup_back"], x_inner_right_front, balda["y_sup_back"])
-        add_line(lineas_base, x_inner_left_front, balda["y_inf_front"], x_inner_right_front, balda["y_inf_front"])
-        add_line(lineas_base, x_inner_left_front, balda["y_sup_front"], x_inner_left_front, balda["y_inf_front"])
-        add_line(lineas_base, x_inner_right_front, balda["y_sup_front"], x_inner_right_front, balda["y_inf_front"])
+    hay_frentes = (num_puertas + num_cajones) > 0
+    if not hay_frentes:
+        add_polygon(caras, [(0, 0, 0), (w, 0, 0), (w, h, 0), (0, h, 0)], clase_cara)
 
-    # Frentes opacos: el relleno se dibuja al final para ocultar interior.
-    for frente in frentes:
-        y_top = frente["y_top"]
-        y_bottom = frente["y_bottom"]
-        add_polygon(
-            rellenos_frente,
-            [(x_front_left, y_top), (x_front_right, y_top), (x_front_right, y_bottom), (x_front_left, y_bottom)],
-            clase=clase_frente,
-        )
+    # Contorno técnico
+    add_line((0, 0, 0), (w, 0, 0))
+    add_line((w, 0, 0), (w, h, 0))
+    add_line((w, h, 0), (0, h, 0))
+    add_line((0, h, 0), (0, 0, 0))
 
+    add_line((0, 0, 0), (0, 0, d))
+    add_line((w, 0, 0), (w, 0, d))
+    add_line((w, h, 0), (w, h, d))
+    add_line((0, h, 0), (0, h, d))
+
+    add_line((0, 0, d), (w, 0, d))
+    add_line((w, 0, d), (w, h, d))
+    add_line((w, h, d), (0, h, d))
+    add_line((0, h, d), (0, 0, d))
+
+    # Apertura frontal si no hay puertas/cajones: baldas visibles en isométrica
+    if not hay_frentes:
+        x0 = espesor_mm
+        x1 = max(x0 + 1.0, w - espesor_mm)
+        y0 = espesor_mm
+        y1 = max(y0 + 1.0, h - espesor_mm)
+        zf = 0.0
+
+        add_polygon(caras, [(x0, y0, zf), (x1, y0, zf), (x1, y1, zf), (x0, y1, zf)], clase_cara)
+        add_line((x0, y0, zf), (x1, y0, zf))
+        add_line((x1, y0, zf), (x1, y1, zf))
+        add_line((x1, y1, zf), (x0, y1, zf))
+        add_line((x0, y1, zf), (x0, y0, zf))
+
+        if num_baldas > 0:
+            hueco = y1 - y0
+            paso = hueco / (num_baldas + 1)
+            esp = max(8.0, espesor_mm * 0.8)
+            for i in range(num_baldas):
+                ys = y0 + (i + 1) * paso
+                add_polygon(
+                    caras,
+                    [(x0, ys, 0), (x1, ys, 0), (x1, ys + esp, d - espesor_mm), (x0, ys + esp, d - espesor_mm)],
+                    clase_cara,
+                )
+                add_line((x0, ys, 0), (x1, ys, 0))
+
+    # Frentes opacos (puertas/cajones)
+    alturas_frentes_mm = _resolver_alturas_frentes(
+        num_puertas=num_puertas,
+        num_cajones=num_cajones,
+        dimensions_portes=dimensions_portes,
+        alto_mm=alto_mm,
+    )
+
+    total_frentes = num_puertas + num_cajones
+    if total_frentes > 0:
+        y_tapa = espesor_mm
+        y_base = h - espesor_mm
+        alto_disponible = max(20.0, y_base - y_tapa)
+
+        alturas = alturas_frentes_mm[:total_frentes] if alturas_frentes_mm else [alto_disponible / total_frentes] * total_frentes
+        if len(alturas) < total_frentes:
+            alturas += [alturas[-1]] * (total_frentes - len(alturas))
+
+        suma = max(1.0, sum(alturas))
+        escala_alt = min(1.0, alto_disponible / suma)
+        alturas = [hmm * escala_alt for hmm in alturas]
+
+        y_cursor = y_base
+        for alto_frente in alturas:
+            y_top = max(y_tapa, y_cursor - alto_frente)
+            add_polygon(frentes_svg, [(0, y_top, 0), (w, y_top, 0), (w, y_cursor, 0), (0, y_cursor, 0)], clase_frente)
+            y_cursor = y_top
+
+    # Patas: prismas pequeños para mantener isométrica y evitar recortes inferiores
+    patas = _calcular_patas(
+        tipo_mueble=tipo_mueble,
+        num_patas=num_patas,
+        altura_patas_mm=altura_patas,
+        x_left=0.0,
+        x_right=w,
+        y_base_bottom=h,
+        px_por_mm_y=1.0,
+    )
     for pata in patas:
         x = pata["x"]
         y_top = pata["y_top"]
         y_bottom = pata["y_bottom"]
-        ancho_pata = pata["ancho"]
+        ancho = pata["ancho"]
+        fondo_pata = min(max(10.0, d * 0.12), 24.0)
 
-        add_polygon(rellenos_patas, [(x, y_top), (x + ancho_pata, y_top), (x + ancho_pata, y_bottom), (x, y_bottom)])
-        add_line(lineas_patas, x, y_top, x + ancho_pata, y_top)
-        add_line(lineas_patas, x + ancho_pata, y_top, x + ancho_pata, y_bottom)
-        add_line(lineas_patas, x + ancho_pata, y_bottom, x, y_bottom)
-        add_line(lineas_patas, x, y_bottom, x, y_top)
+        add_polygon(patas_svg, [(x, y_top, 0), (x + ancho, y_top, 0), (x + ancho, y_bottom, 0), (x, y_bottom, 0)], clase_cara)
+        add_polygon(patas_svg, [(x + ancho, y_top, 0), (x + ancho, y_top, fondo_pata), (x + ancho, y_bottom, fondo_pata), (x + ancho, y_bottom, 0)], clase_cara)
+        add_line((x, y_top, 0), (x + ancho, y_top, 0))
+        add_line((x + ancho, y_top, 0), (x + ancho, y_bottom, 0))
+        add_line((x + ancho, y_bottom, 0), (x, y_bottom, 0))
+        add_line((x, y_bottom, 0), (x, y_top, 0))
 
     if min_x == float("inf"):
-        min_x = 0.0
-        max_x = 100.0
-        min_y = 0.0
-        max_y = 100.0
+        min_x, min_y, max_x, max_y = 0.0, 0.0, 100.0, 100.0
 
-    # Margen extra para evitar recortes, especialmente en patas/base y zona superior.
-    margen_x = 30.0
-    margen_y_superior = 42.0
-    margen_y_inferior = 52.0
-    min_x -= margen_x
-    min_y -= margen_y_superior
-    max_x += margen_x
-    max_y += margen_y_inferior
+    min_x -= 42.0
+    max_x += 42.0
+    min_y -= 46.0
+    max_y += 58.0
 
     view_w = max_x - min_x
     view_h = max_y - min_y
 
-    lineas_ordenadas = [linea for _, _, linea in sorted([*lineas_base, *lineas_patas], key=lambda item: (item[1], item[0]))]
-
     svg = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{min_x:.1f} {min_y:.1f} {view_w:.1f} {view_h:.1f}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">',
         "<style>",
-        f'.{clase_relleno}{{fill:{color_relleno};stroke:none;}}',
-        f'.{clase_linea}{{stroke:{color_linea};stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round;}}',
+        f'.{clase_cara}{{fill:{color_relleno};stroke:{color_linea};stroke-width:2.2;stroke-linejoin:round;}}',
+        f'.{clase_linea}{{stroke:{color_linea};stroke-width:2.0;fill:none;stroke-linecap:round;stroke-linejoin:round;}}',
         f'.{clase_frente}{{fill:#FFFFFF;stroke:#111111;stroke-width:2.2;stroke-linejoin:round;}}',
         "</style>",
-        *rellenos_base,
-        *lineas_ordenadas,
-        *rellenos_frente,
-        *rellenos_patas,
+        *caras,
+        *patas_svg,
+        *lineas,
+        *frentes_svg,
         "</svg>",
     ]
     return "\n".join(svg)
@@ -317,34 +246,6 @@ def generar_svg_mueble_desde_csv_row(row: dict[str, Any]) -> str:
         altura_patas=row.get("altura_patas", 0),
         tipo_mueble=row.get("tipo_mueble", "S"),
     )
-
-
-def _calcular_baldas(
-    num_baldas: int,
-    y_tapa_bottom_front: float,
-    y_base_top_front: float,
-    espesor_px_y: float,
-    dy_fondo: float,
-) -> list[dict[str, float]]:
-    if num_baldas <= 0:
-        return []
-
-    hueco_libre = y_base_top_front - y_tapa_bottom_front
-    separacion = hueco_libre / (num_baldas + 1)
-    baldas: list[dict[str, float]] = []
-
-    for i in range(num_baldas):
-        y_sup_front = y_tapa_bottom_front + separacion * (i + 1)
-        y_inf_front = y_sup_front + espesor_px_y
-        baldas.append(
-            {
-                "y_sup_front": y_sup_front,
-                "y_inf_front": y_inf_front,
-                "y_sup_back": y_sup_front - dy_fondo,
-                "y_inf_back": y_inf_front - dy_fondo,
-            }
-        )
-    return baldas
 
 
 def _resolver_alturas_frentes(
@@ -366,44 +267,6 @@ def _resolver_alturas_frentes(
         alturas.extend([alturas[-1]] * (total_frentes - len(alturas)))
 
     return alturas[:total_frentes]
-
-
-def _calcular_frentes(
-    alturas_frentes_mm: list[float],
-    num_cajones: int,
-    num_puertas: int,
-    y_base_top_front: float,
-    y_tapa_bottom_front: float,
-    px_por_mm_y: float,
-) -> list[dict[str, float | str]]:
-    total = num_cajones + num_puertas
-    if total == 0:
-        return []
-
-    alturas_px = [max(12.0, h * px_por_mm_y) for h in alturas_frentes_mm]
-
-    alto_disponible = max(0.0, y_base_top_front - y_tapa_bottom_front)
-    suma = sum(alturas_px)
-    escala = 1.0 if suma <= 0 else min(1.0, alto_disponible / suma)
-    alturas_px = [h * escala for h in alturas_px]
-
-    frentes: list[dict[str, float | str]] = []
-    y_cursor = y_base_top_front
-
-    for i in range(num_cajones):
-        alto = alturas_px[i] if i < len(alturas_px) else (alto_disponible / total)
-        y_top = max(y_tapa_bottom_front, y_cursor - alto)
-        frentes.append({"tipo": "cajon", "y_top": y_top, "y_bottom": y_cursor})
-        y_cursor = y_top
-
-    for j in range(num_puertas):
-        idx = num_cajones + j
-        alto = alturas_px[idx] if idx < len(alturas_px) else (alto_disponible / total)
-        y_top = max(y_tapa_bottom_front, y_cursor - alto)
-        frentes.append({"tipo": "puerta", "y_top": y_top, "y_bottom": y_cursor})
-        y_cursor = y_top
-
-    return frentes
 
 
 def _calcular_patas(
