@@ -114,7 +114,8 @@ def generar_svg_mueble(
     # 1) Caras opacas del cuerpo.
     tapa = [(0, 0, z1), (w, 0, z1), (w, d, z1), (0, d, z1)]
     lateral_derecho = [(w, 0, z0), (w, d, z0), (w, d, z1), (w, 0, z1)]
-    frente = [(0, 0, z0), (w, 0, z0), (w, 0, z1), (0, 0, z1)]
+    # El frente visible se coloca en el lateral izquierdo de la vista (y=d).
+    frente = [(0, d, z0), (w, d, z0), (w, d, z1), (0, d, z1)]
 
     add_polygon(caras, tapa, clase_cara)
     add_polygon(caras, lateral_derecho, clase_cara)
@@ -139,27 +140,9 @@ def generar_svg_mueble(
                 # Cara superior visible.
                 add_polygon(caras, [(xi0, 0, z_sup), (xi1, 0, z_sup), (xi1, yi1, z_sup), (xi0, yi1, z_sup)], clase_cara)
                 # Canto frontal visible.
-                add_polygon(caras, [(xi0, 0, z_sup), (xi1, 0, z_sup), (xi1, 0, z_inf), (xi0, 0, z_inf)], clase_cara)
+                add_polygon(caras, [(xi0, d, z_sup), (xi1, d, z_sup), (xi1, d, z_inf), (xi0, d, z_inf)], clase_cara)
 
-    # 3) Patas opacas.
-    patas = _calcular_patas(
-        tipo_mueble=tipo_mueble,
-        num_patas=num_patas,
-        altura_patas_mm=altura_patas_real,
-        x_left=0.0,
-        x_right=w,
-    )
-    prof_pata = min(max(10.0, d * 0.14), 24.0)
-    for pata in patas:
-        x0 = pata["x"]
-        x1 = x0 + pata["ancho"]
-        y0 = 0.0
-        y1 = prof_pata
-        pz0 = 0.0
-        pz1 = altura_patas_real
-
-        add_polygon(patas_svg, [(x0, y0, pz0), (x1, y0, pz0), (x1, y0, pz1), (x0, y0, pz1)], clase_cara)
-        add_polygon(patas_svg, [(x1, y0, pz0), (x1, y1, pz0), (x1, y1, pz1), (x1, y0, pz1)], clase_cara)
+    # 3) Patas eliminadas de la representación.
 
     # 4) Frentes opacos (cajones abajo, puertas arriba).
     total_frentes = num_cajones + num_puertas
@@ -192,23 +175,24 @@ def generar_svg_mueble(
             z_next = min(z1 - espesor_mm, z_cursor + alto_bloque)
             if z_next <= z_cursor:
                 continue
-            add_polygon(frentes_svg, [(0, 0, z_cursor), (w, 0, z_cursor), (w, 0, z_next), (0, 0, z_next)], clase_frente)
+            add_polygon(frentes_svg, [(0, d, z_cursor), (w, d, z_cursor), (w, d, z_next), (0, d, z_next)], clase_frente)
             divisiones.append(z_next)
             z_cursor = z_next
 
         for z_div in divisiones[:-1]:
-            add_line((0, 0, z_div), (w, 0, z_div))
+            add_line((0, d, z_div), (w, d, z_div))
 
     # 5) Solo aristas visibles útiles.
     aristas_visibles = [
-        ((0, 0, z1), (w, 0, z1)),
+        ((0, d, z1), (w, d, z1)),
         ((w, 0, z1), (w, d, z1)),
         ((w, d, z1), (0, d, z1)),
         ((0, d, z1), (0, 0, z1)),
         ((w, 0, z0), (w, d, z0)),
         ((w, d, z0), (w, d, z1)),
-        ((0, 0, z0), (w, 0, z0)),
-        ((0, 0, z0), (0, 0, z1)),
+        ((0, d, z0), (w, d, z0)),
+        ((0, d, z0), (0, d, z1)),
+        ((w, d, z0), (w, d, z1)),
         ((w, 0, z0), (w, 0, z1)),
     ]
 
@@ -220,7 +204,7 @@ def generar_svg_mueble(
 
     margen_x = 56.0
     margen_y_arriba = 62.0
-    margen_y_abajo = 88.0 if tipo_mueble == "P" and altura_patas_real > 0 else 62.0
+    margen_y_abajo = 62.0
 
     vb_x = min_x - margen_x
     vb_y = min_y - margen_y_arriba
