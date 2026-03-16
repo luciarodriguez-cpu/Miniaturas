@@ -110,13 +110,24 @@ def generar_svg_mueble(
     if not hay_frentes:
         add_polygon(caras, [(0, 0, 0), (w, 0, 0), (w, 0, h), (0, 0, h)], clase_cara)
 
-    # Aristas exteriores de caja.
-    edges = [
-        ((0, 0, 0), (w, 0, 0)), ((w, 0, 0), (w, d, 0)), ((w, d, 0), (0, d, 0)), ((0, d, 0), (0, 0, 0)),
-        ((0, 0, h), (w, 0, h)), ((w, 0, h), (w, d, h)), ((w, d, h), (0, d, h)), ((0, d, h), (0, 0, h)),
-        ((0, 0, 0), (0, 0, h)), ((w, 0, 0), (w, 0, h)), ((w, d, 0), (w, d, h)), ((0, d, 0), (0, d, h)),
+    # Aristas visibles (sin mallado trasero para evitar sensación wireframe/deformada).
+    edges_visibles = [
+        # Frente
+        ((0, 0, 0), (w, 0, 0)),
+        ((w, 0, 0), (w, 0, h)),
+        ((w, 0, h), (0, 0, h)),
+        ((0, 0, h), (0, 0, 0)),
+        # Tapa
+        ((0, 0, h), (0, d, h)),
+        ((0, d, h), (w, d, h)),
+        ((w, d, h), (w, 0, h)),
+        # Lateral derecho
+        ((w, 0, 0), (w, d, 0)),
+        ((w, d, 0), (w, d, h)),
+        # Unión inferior de profundidad para leer volumen
+        ((0, 0, 0), (0, d, 0)),
     ]
-    for e1, e2 in edges:
+    for e1, e2 in edges_visibles:
         add_line(e1, e2)
 
     # Interior frontal (solo si no hay frentes).
