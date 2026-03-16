@@ -159,7 +159,7 @@ def generar_svg_mueble(
         angulo: float,
     ) -> None:
         y_trasera = d
-        y_frontal = d + ESPESOR_ESTANDAR_MM
+        y_frontal = d + espesor_mm
 
         base = {
             "bbl": (0.0, y_trasera, z_inf),
@@ -177,10 +177,12 @@ def generar_svg_mueble(
                 xr, yr = _rotar_puerta_izquierda(xv, yv, angulo)
                 base[k] = (xr, yr, zv)
 
+        # Cara frontal del frente (y = d + espesor).
         add_polygon(target, [base["bfl"], base["bfr"], base["tfr"], base["tfl"]], clase_frente)
+        # Cara lateral derecha visible.
         add_polygon(target, [base["bbr"], base["bfr"], base["tfr"], base["tbr"]], clase_frente)
+        # Cara superior visible en esta proyección isométrica.
         add_polygon(target, [base["tbl"], base["tbr"], base["tfr"], base["tfl"]], clase_frente)
-        add_polygon(target, [base["bbl"], base["bbr"], base["bfr"], base["bfl"]], clase_frente)
 
     # 4) Frentes opacos (cajones abajo, puertas arriba).
     total_frentes = num_cajones + num_puertas
