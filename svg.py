@@ -52,9 +52,9 @@ def generar_svg_mueble(
     color_relleno = "#FFFFFF"
     color_linea = "#111111"
 
-    # Ejes canónicos: x=ancho, y=fondo, z=altura.
-    # Isometría técnica con la misma escala en X/Y/Z.
-    ang = math.radians(30.0)
+    # Ejes: x=ancho, y=fondo, z=altura.
+    # Proyección isométrica canónica (misma escala en x/y/z).
+    ang = math.radians(30)
     cos30 = math.cos(ang)
     sin30 = math.sin(ang)
     escala = 0.44
@@ -74,9 +74,9 @@ def generar_svg_mueble(
         min_y = min(min_y, py)
         max_y = max(max_y, py)
 
-    def proj(x_mm: float, y_mm: float, z_mm: float) -> tuple[float, float]:
-        px = ox + (x_mm - y_mm) * cos30 * escala
-        py = oy + (x_mm + y_mm) * sin30 * escala - z_mm * escala
+    def proj(x: float, y: float, z: float) -> tuple[float, float]:
+        px = ox + (x - y) * cos30 * escala
+        py = oy + (x + y) * sin30 * escala - z * escala
         track(px, py)
         return px, py
 
@@ -92,7 +92,7 @@ def generar_svg_mueble(
 
     def add_polygon(target: list[str], pts3d: list[tuple[float, float, float]], clase: str) -> None:
         pts2d = [proj(*p) for p in pts3d]
-        pts = ' '.join(f'{x:.1f},{y:.1f}' for x, y in pts2d)
+        pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts2d)
         target.append(f'<polygon class="{clase}" points="{pts}"/>')
 
     def add_line(p1: tuple[float, float, float], p2: tuple[float, float, float]) -> None:
@@ -112,24 +112,21 @@ def generar_svg_mueble(
 
     hay_frentes = (num_puertas + num_cajones) > 0
 
-    # Caras opacas del mueble (sin wireframe de caras ocultas)
-    # Tapa
-    add_polygon(caras, [(0, 0, z1), (w, 0, z1), (w, d, z1), (0, d, z1)], clase_cara)
-    # Lateral derecho visible
-    add_polygon(caras, [(w, 0, z0), (w, d, z0), (w, d, z1), (w, 0, z1)], clase_cara)
-    # Frente cerrado solo si no hay puertas/cajones
+    # Caras visibles obligatorias: tapa, lateral derecho y frente.
+    add_polygon(caras, [(0, 0, z1), (w, 0, z1), (w, d, z1), (0, d, z1)], clase_cara)  # tapa
+    add_polygon(caras, [(w, 0, z0), (w, d, z0), (w, d, z1), (w, 0, z1)], clase_cara)  # lateral derecho
     if not hay_frentes:
-        add_polygon(caras, [(0, 0, z0), (w, 0, z0), (w, 0, z1), (0, 0, z1)], clase_cara)
+        add_polygon(caras, [(0, 0, z0), (w, 0, z0), (w, 0, z1), (0, 0, z1)], clase_cara)  # frente
 
-    # Interior y baldas: visibles solo cuando no hay frentes
-    if not hay_frentes:
+    # Baldas solo en mueble abierto (sin puertas/cajones).
+    if not hay_frentes and num_baldas > 0:
         xi0 = espesor_mm
         xi1 = max(xi0 + 1.0, w - espesor_mm)
         yi1 = max(espesor_mm, d - espesor_mm)
         zi0 = z0 + espesor_mm
         zi1 = max(zi0 + 1.0, z1 - espesor_mm)
 
-        if num_baldas > 0 and zi1 > zi0 + 8.0:
+        if zi1 > zi0 + 8.0:
             paso = (zi1 - zi0) / (num_baldas + 1)
             esp_balda = max(8.0, espesor_mm * 0.85)
             for idx in range(num_baldas):
@@ -140,8 +137,14 @@ def generar_svg_mueble(
                 # canto frontal de balda
                 add_polygon(caras, [(xi0, 0, z_sup), (xi1, 0, z_sup), (xi1, 0, z_inf), (xi0, 0, z_inf)], clase_cara)
 
-    # Patas opacas
-    patas = _calcular_patas(tipo_mueble=tipo_mueble, num_patas=num_patas, altura_patas_mm=altura_patas_real, x_left=0.0, x_right=w)
+    # Patas (si tipo P), como prismas opacos bajo el mueble.
+    patas = _calcular_patas(
+        tipo_mueble=tipo_mueble,
+        num_patas=num_patas,
+        altura_patas_mm=altura_patas_real,
+        x_left=0.0,
+        x_right=w,
+    )
     for pata in patas:
         x0 = pata["x"]
         x1 = x0 + pata["ancho"]
@@ -150,12 +153,10 @@ def generar_svg_mueble(
         pz0 = 0.0
         pz1 = altura_patas_real
 
-        # frente de pata
-        add_polygon(patas_svg, [(x0, y0, pz0), (x1, y0, pz0), (x1, y0, pz1), (x0, y0, pz1)], clase_cara)
-        # lateral derecho de pata
-        add_polygon(patas_svg, [(x1, y0, pz0), (x1, y1, pz0), (x1, y1, pz1), (x1, y0, pz1)], clase_cara)
+        add_polygon(patas_svg, [(x0, y0, pz0), (x1, y0, pz0), (x1, y0, pz1), (x0, y0, pz1)], clase_cara)  # frente
+        add_polygon(patas_svg, [(x1, y0, pz0), (x1, y1, pz0), (x1, y1, pz1), (x1, y0, pz1)], clase_cara)  # lateral derecho
 
-    # Frentes opacos delante del mueble (cajones abajo, puertas arriba)
+    # Frentes en plano frontal (cajones abajo, puertas arriba), opacos.
     total_frentes = num_cajones + num_puertas
     if total_frentes > 0:
         alto_util = max(40.0, h - 2 * espesor_mm)
@@ -170,38 +171,33 @@ def generar_svg_mueble(
             alturas.extend([max(80.0, alto_util / total_frentes)] * faltan)
 
         alturas = alturas[:total_frentes]
-        suma_alturas = max(1.0, sum(alturas))
-        factor = alto_util / suma_alturas
+        factor = alto_util / max(1.0, sum(alturas))
         alturas = [a * factor for a in alturas]
 
         bloques = (["cajon"] * num_cajones) + (["puerta"] * num_puertas)
         z_cursor = z0 + espesor_mm
-        for tipo_bloque, alto_bloque in zip(bloques, alturas):
+        for _tipo_bloque, alto_bloque in zip(bloques, alturas):
             z_next = min(z1 - espesor_mm, z_cursor + alto_bloque)
             if z_next <= z_cursor:
                 continue
             add_polygon(frentes_svg, [(0, 0, z_cursor), (w, 0, z_cursor), (w, 0, z_next), (0, 0, z_next)], clase_frente)
             z_cursor = z_next
 
-    # Aristas visibles únicamente
+    # Aristas solo visibles en esta orientación (sin wireframe completo).
     visible_edges = [
-        # Frente
+        # Contorno del frente
         ((0, 0, z0), (w, 0, z0)),
         ((w, 0, z0), (w, 0, z1)),
         ((w, 0, z1), (0, 0, z1)),
         ((0, 0, z1), (0, 0, z0)),
-        # Tapa
+        # Tapa visible
         ((0, 0, z1), (0, d, z1)),
         ((0, d, z1), (w, d, z1)),
         ((w, d, z1), (w, 0, z1)),
-        # Lateral derecho
+        # Lateral derecho visible
         ((w, 0, z0), (w, d, z0)),
         ((w, d, z0), (w, d, z1)),
     ]
-
-    # Línea base frontal solo cuando hay patas (se ve z0 elevado)
-    if altura_patas_real > 0:
-        visible_edges.append(((0, 0, z0), (0, d * 0.18, z0)))
 
     for p1, p2 in visible_edges:
         add_line(p1, p2)
