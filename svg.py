@@ -98,6 +98,8 @@ def generar_svg_mueble(
 
     caras: list[str] = []
     patas_svg: list[str] = []
+    base_svg: list[str] = []
+    interior_svg: list[str] = []
     cajones_svg: list[str] = []
     puertas_svg: list[str] = []
     lineas: list[str] = []
@@ -132,30 +134,39 @@ def generar_svg_mueble(
     # El frente visible se coloca en el lateral izquierdo de la vista (y=d).
     frente = [(0, d, z0), (w, d, z0), (w, d, z1), (0, d, z1)]
 
+    base_panel = [
+        (espesor_mm, 0.0, z0),
+        (max(espesor_mm, w - espesor_mm), 0.0, z0),
+        (max(espesor_mm, w - espesor_mm), d, z0),
+        (espesor_mm, d, z0),
+    ]
+
     add_polygon(caras, tapa, clase_cara)
     add_polygon(caras, lateral_derecho, clase_cara)
     if not hay_frentes:
         add_polygon(caras, frente, clase_cara)
 
-    # 2) Baldas solo si hay puertas.
-    if num_puertas > 0 and num_baldas > 0:
+    add_polygon(base_svg, base_panel, clase_cara)
+
+    # 2) Baldas solo si hay al menos una puerta abierta.
+    hay_puerta_abierta = num_puertas > 0
+    if hay_puerta_abierta and num_baldas > 0:
         xi0 = min(max(espesor_mm, 8.0), w * 0.2)
-        xi1 = max(xi0 + 1.0, w - xi0)
-        yi1 = max(espesor_mm, d - espesor_mm)
+        xi1 = max(xi0 + 1.0, min(w * 0.6, w - espesor_mm))
+        yi1 = max(0.0, d - espesor_mm)
         zi0 = z0 + espesor_mm
         zi1 = z1 - espesor_mm
 
-        if zi1 - zi0 > 16.0:
+        if xi1 > xi0 and zi1 - zi0 > 16.0:
             paso = (zi1 - zi0) / (num_baldas + 1)
             esp_balda = max(8.0, espesor_mm * 0.85)
             for i in range(num_baldas):
                 z_sup = zi0 + (i + 1) * paso
                 z_inf = min(zi1, z_sup + esp_balda)
 
-                # Cara superior visible.
-                add_polygon(caras, [(xi0, 0, z_sup), (xi1, 0, z_sup), (xi1, yi1, z_sup), (xi0, yi1, z_sup)], clase_cara)
-                # Canto frontal visible.
-                add_polygon(caras, [(xi0, d, z_sup), (xi1, d, z_sup), (xi1, d, z_inf), (xi0, d, z_inf)], clase_cara)
+                # Solo por el hueco visible y sin atravesar el lateral derecho.
+                add_polygon(interior_svg, [(xi0, 0, z_sup), (xi1, 0, z_sup), (xi1, yi1, z_sup), (xi0, yi1, z_sup)], clase_cara)
+                add_polygon(interior_svg, [(xi0, d, z_sup), (xi1, d, z_sup), (xi1, d, z_inf), (xi0, d, z_inf)], clase_cara)
 
     def _rotar_puerta_izquierda(x: float, y: float, angulo: float) -> tuple[float, float]:
         y_rel = y - d
@@ -213,6 +224,8 @@ def generar_svg_mueble(
         add_polygon=add_polygon,
         clase=clase_cara,
         espesor_mm=espesor_mm,
+        z0=z0,
+        hay_frentes=hay_frentes,
     )
 
     # 4) Frentes opacos con el nuevo modelo.
@@ -274,8 +287,10 @@ def generar_svg_mueble(
         f'.{clase_frente}{{fill:#FFFFFF;stroke:#111111;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round;}}',
         f'.{clase_linea}{{fill:none;stroke:{color_linea};stroke-width:2.0;stroke-linejoin:round;stroke-linecap:round;}}',
         "</style>",
-        *caras,
         *patas_svg,
+        *caras,
+        *base_svg,
+        *interior_svg,
         *cajones_svg,
         *puertas_svg,
         *lineas,
@@ -368,6 +383,8 @@ def _draw_leg_prisms(
     add_polygon: Any,
     clase: str,
     espesor_mm: float,
+    z0: float,
+    hay_frentes: bool,
 ) -> None:
     if tipo_mueble != "P" or num_patas <= 0 or altura_patas_mm <= 0:
         return
@@ -394,15 +411,29 @@ def _draw_leg_prisms(
         posiciones = posiciones[:num_patas]
 
     z_inf = 0.0
-    z_sup = altura_patas_mm
+    z_sup = min(altura_patas_mm, z0)
+    if z_sup <= z_inf:
+        return
+
+    # Dibujar primero patas traseras para mejorar la oclusión visual.
+    posiciones.sort(key=lambda p: p[1])
 
     for x, y in posiciones:
         x2 = min(ancho_mm, x + size)
         y2 = min(fondo_mm, y + size)
 
-        add_polygon(target, [(x, y, z_inf), (x2, y, z_inf), (x2, y2, z_inf), (x, y2, z_inf)], clase)
-        add_polygon(target, [(x, y2, z_inf), (x2, y2, z_inf), (x2, y2, z_sup), (x, y2, z_sup)], clase)
-        add_polygon(target, [(x2, y, z_inf), (x2, y2, z_inf), (x2, y2, z_sup), (x2, y, z_sup)], clase)
+        # Ocultación por frentes: la cara frontal queda detrás de paneles frontales.
+        ocultar_frente = hay_frentes and y2 > (fondo_mm - espesor_mm)
+
+        if not ocultar_frente:
+            add_polygon(target, [(x, y2, z_inf), (x2, y2, z_inf), (x2, y2, z_sup), (x, y2, z_sup)], clase)
+
+        # Solo cara lateral exterior visible, evitando caras internas.
+        centro_x = x + (x2 - x) * 0.5
+        if centro_x >= (ancho_mm * 0.5):
+            add_polygon(target, [(x2, y, z_inf), (x2, y2, z_inf), (x2, y2, z_sup), (x2, y, z_sup)], clase)
+        else:
+            add_polygon(target, [(x, y, z_inf), (x, y2, z_inf), (x, y2, z_sup), (x, y, z_sup)], clase)
 
 
 def _parse_alturas_portes(dimensions_portes: str | list[str] | None) -> list[float]:
