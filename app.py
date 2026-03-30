@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Any
 
 import pandas as pd
@@ -15,24 +14,24 @@ st.title("Miniaturas de muebles")
 st.write("Sube un CSV para generar las miniaturas SVG automáticamente")
 
 
-# Columnas del nuevo CSV (fuente)
-CSV_COL_PRODUIT = "Produit"
-CSV_COL_DESIGNATION = "Désignation du produit"
-CSV_COL_LARGEUR = "Largeur (mm)"
-CSV_COL_HAUTEUR_SANS_PIEDS = "Hauteur (mm) sans pieds"
-CSV_COL_PROFONDEUR_SANS_FACADE = "Profondeur (mm) sans façade"
-CSV_COL_HAUTEUR_PIEDS = "Ht pieds (mm) 100 en standard"
-CSV_COL_VIDE_SANITAIRE = "Vide sanitaire (mm)"
-CSV_COL_TYPE_MEUBLE = "Meuble posé (P)/ Suspendu (S)"
-CSV_COL_NOMBRE_FACADES = "Nombre de façades"
-CSV_COL_DIMENSIONS_FACADES = "Dimension façades (de bas en haut) L * H en mm"
-CSV_COL_NOMBRE_ETAGERES_INTERIEURES = "Nombre d'étagères intérieures"
-CSV_COL_NOMBRE_PIEDS = "Nombre de pieds"
-CSV_COL_NOMBRE_POIGNEES = "Nombre de poignées"
-CSV_COL_NOMBRE_PORTES = "Nombre de portes"
-CSV_COL_NOMBRE_TIROIRS = "Nombre de tiroirs"
-CSV_COL_NOMBRE_BLOCS_COULISSANTS = "Nombre de blocs coulissants"
-CSV_COL_NOMBRE_FAUX_TIROIRS_BANDEAU = "Nombre de faux tiroirs ou bandeau"
+# Columnas por índice (fuente)
+COL_PRODUCTO = 0
+COL_DESIGNACION = 1
+COL_ANCHO = 2
+COL_ALTO = 3
+COL_FONDO = 4
+COL_ALTURA_PATAS = 5
+COL_VIDE_SANITAIRE = 6
+COL_TIPO = 7
+COL_NUM_FACADES = 8
+COL_DIM_FACADES = 9
+COL_NUM_BALDAS = 10
+COL_NUM_PATAS = 11
+COL_NUM_TIRADORES = 12
+COL_NUM_PUERTAS = 13
+COL_NUM_TIROIRS = 14
+COL_NUM_BLOCS = 15
+COL_NUM_FAUX = 16
 
 # Nombres internos normalizados
 FIELD_PRODUCTO = "producto"
@@ -63,46 +62,6 @@ REQUIRED_INTERNAL_FIELDS = [
 ]
 
 MISSING_STRINGS = {"", "na", "n/a", "nan", "none", "null", "<na>"}
-
-
-def _normalize_column_name(name: Any) -> str:
-    normalized = str(name)
-
-    # limpiar caracteres invisibles
-    normalized = normalized.replace("\n", " ").replace("\r", " ").replace("\t", " ")
-    normalized = normalized.replace("\xa0", " ")  # espacio no rompible
-
-    # colapsar espacios
-    normalized = re.sub(r"\s+", " ", normalized).strip().lower()
-
-    # quitar acentos
-    normalized = unicodedata.normalize("NFKD", normalized)
-    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
-
-    return normalized
-
-
-COLUMN_MAPPING = {
-    _normalize_column_name(CSV_COL_PRODUIT): FIELD_PRODUCTO,
-    _normalize_column_name(CSV_COL_DESIGNATION): FIELD_DESIGNACION,
-    _normalize_column_name(CSV_COL_LARGEUR): FIELD_ANCHO_MM,
-    _normalize_column_name(CSV_COL_HAUTEUR_SANS_PIEDS): FIELD_ALTO_MM,
-    _normalize_column_name(CSV_COL_PROFONDEUR_SANS_FACADE): FIELD_FONDO_MM,
-    _normalize_column_name(CSV_COL_HAUTEUR_PIEDS): FIELD_ALTURA_PATAS_MM,
-    _normalize_column_name(CSV_COL_VIDE_SANITAIRE): FIELD_VIDE_SANITAIRE_MM,
-    _normalize_column_name(CSV_COL_TYPE_MEUBLE): FIELD_TIPO_MUEBLE,
-    _normalize_column_name(CSV_COL_NOMBRE_FACADES): FIELD_NUM_FACADES,
-    _normalize_column_name(CSV_COL_DIMENSIONS_FACADES): FIELD_FACADES_DIMENSIONES,
-    _normalize_column_name(CSV_COL_NOMBRE_ETAGERES_INTERIEURES): FIELD_NUM_BALDAS_INTERIORES,
-    _normalize_column_name(CSV_COL_NOMBRE_PIEDS): FIELD_NUM_PATAS,
-    _normalize_column_name(CSV_COL_NOMBRE_POIGNEES): FIELD_NUM_TIRADORES,
-    _normalize_column_name(CSV_COL_NOMBRE_PORTES): FIELD_NUM_PUERTAS,
-    _normalize_column_name(CSV_COL_NOMBRE_TIROIRS): FIELD_NUM_TIROIRS,
-    _normalize_column_name(CSV_COL_NOMBRE_BLOCS_COULISSANTS): FIELD_NUM_BLOCS_COULISSANTS,
-    _normalize_column_name(CSV_COL_NOMBRE_FAUX_TIROIRS_BANDEAU): FIELD_NUM_FAUX_TIROIRS_BANDEAU,
-}
-
-REQUIRED_SOURCE_COLUMNS = list(COLUMN_MAPPING.keys())
 
 
 def _is_missing(value: Any) -> bool:
@@ -170,25 +129,35 @@ def _parse_facade_dimensions(value: Any) -> list[dict[str, int]]:
     return parsed_dimensions
 
 
+def _value_at(row: pd.Series, idx: int, default: Any = None) -> Any:
+    try:
+        return row.iloc[idx]
+    except IndexError:
+        return default
+
+
 def _parse_row_to_internal(row: pd.Series) -> dict[str, Any]:
+    producto = _value_at(row, COL_PRODUCTO, default="")
+    designacion = _value_at(row, COL_DESIGNACION)
+
     return {
-        FIELD_PRODUCTO: str(row.get(FIELD_PRODUCTO, "")).strip() or "Producto sin nombre",
-        FIELD_DESIGNACION: None if _is_missing(row.get(FIELD_DESIGNACION)) else str(row.get(FIELD_DESIGNACION)).strip(),
-        FIELD_ANCHO_MM: _to_non_negative_float(row.get(FIELD_ANCHO_MM), default=600.0),
-        FIELD_ALTO_MM: _to_non_negative_float(row.get(FIELD_ALTO_MM), default=800.0),
-        FIELD_FONDO_MM: _to_non_negative_float(row.get(FIELD_FONDO_MM), default=350.0),
-        FIELD_ALTURA_PATAS_MM: _to_non_negative_float(row.get(FIELD_ALTURA_PATAS_MM), default=0.0),
-        FIELD_VIDE_SANITAIRE_MM: _to_non_negative_float(row.get(FIELD_VIDE_SANITAIRE_MM), default=0.0),
-        FIELD_TIPO_MUEBLE: _parse_tipo_mueble(row.get(FIELD_TIPO_MUEBLE)),
-        FIELD_NUM_FACADES: _to_non_negative_int(row.get(FIELD_NUM_FACADES), default=0),
-        FIELD_FACADES_DIMENSIONES: _parse_facade_dimensions(row.get(FIELD_FACADES_DIMENSIONES)),
-        FIELD_NUM_BALDAS_INTERIORES: _to_non_negative_int(row.get(FIELD_NUM_BALDAS_INTERIORES), default=0),
-        FIELD_NUM_PATAS: _to_non_negative_int(row.get(FIELD_NUM_PATAS), default=0),
-        FIELD_NUM_TIRADORES: _to_non_negative_int(row.get(FIELD_NUM_TIRADORES), default=0),
-        FIELD_NUM_PUERTAS: _to_non_negative_int(row.get(FIELD_NUM_PUERTAS), default=0),
-        FIELD_NUM_TIROIRS: _to_non_negative_int(row.get(FIELD_NUM_TIROIRS), default=0),
-        FIELD_NUM_BLOCS_COULISSANTS: _to_non_negative_int(row.get(FIELD_NUM_BLOCS_COULISSANTS), default=0),
-        FIELD_NUM_FAUX_TIROIRS_BANDEAU: _to_non_negative_int(row.get(FIELD_NUM_FAUX_TIROIRS_BANDEAU), default=0),
+        FIELD_PRODUCTO: str(producto).strip() or "Producto sin nombre",
+        FIELD_DESIGNACION: None if _is_missing(designacion) else str(designacion).strip(),
+        FIELD_ANCHO_MM: _to_non_negative_float(_value_at(row, COL_ANCHO), default=600.0),
+        FIELD_ALTO_MM: _to_non_negative_float(_value_at(row, COL_ALTO), default=800.0),
+        FIELD_FONDO_MM: _to_non_negative_float(_value_at(row, COL_FONDO), default=350.0),
+        FIELD_ALTURA_PATAS_MM: _to_non_negative_float(_value_at(row, COL_ALTURA_PATAS), default=0.0),
+        FIELD_VIDE_SANITAIRE_MM: _to_non_negative_float(_value_at(row, COL_VIDE_SANITAIRE), default=0.0),
+        FIELD_TIPO_MUEBLE: _parse_tipo_mueble(_value_at(row, COL_TIPO)),
+        FIELD_NUM_FACADES: _to_non_negative_int(_value_at(row, COL_NUM_FACADES), default=0),
+        FIELD_FACADES_DIMENSIONES: _parse_facade_dimensions(_value_at(row, COL_DIM_FACADES)),
+        FIELD_NUM_BALDAS_INTERIORES: _to_non_negative_int(_value_at(row, COL_NUM_BALDAS), default=0),
+        FIELD_NUM_PATAS: _to_non_negative_int(_value_at(row, COL_NUM_PATAS), default=0),
+        FIELD_NUM_TIRADORES: _to_non_negative_int(_value_at(row, COL_NUM_TIRADORES), default=0),
+        FIELD_NUM_PUERTAS: _to_non_negative_int(_value_at(row, COL_NUM_PUERTAS), default=0),
+        FIELD_NUM_TIROIRS: _to_non_negative_int(_value_at(row, COL_NUM_TIROIRS), default=0),
+        FIELD_NUM_BLOCS_COULISSANTS: _to_non_negative_int(_value_at(row, COL_NUM_BLOCS), default=0),
+        FIELD_NUM_FAUX_TIROIRS_BANDEAU: _to_non_negative_int(_value_at(row, COL_NUM_FAUX), default=0),
     }
 
 
@@ -219,34 +188,9 @@ if uploaded_file is None:
     st.stop()
 
 try:
-    df = pd.read_csv(uploaded_file)
+    df = pd.read_csv(uploaded_file, header=None, skiprows=1, sep=None, engine="python")
 except Exception as exc:
     st.error(f"No se pudo leer el CSV: {exc}")
-    st.stop()
-
-normalized_columns = {_normalize_column_name(col): col for col in df.columns}
-missing_source_columns = [col for col in REQUIRED_SOURCE_COLUMNS if col not in normalized_columns]
-if missing_source_columns:
-    missing_labels = [k for k, v in COLUMN_MAPPING.items() if k in missing_source_columns]
-    st.error(
-        "Faltan columnas obligatorias del nuevo CSV: "
-        + ", ".join(missing_labels)
-    )
-    st.stop()
-
-renamed_columns = {
-    normalized_columns[source_name]: internal_name
-    for source_name, internal_name in COLUMN_MAPPING.items()
-    if source_name in normalized_columns
-}
-df = df.rename(columns=renamed_columns)
-
-missing_internal_fields = [field for field in REQUIRED_INTERNAL_FIELDS if field not in df.columns]
-if missing_internal_fields:
-    st.error(
-        "No se pudieron mapear columnas obligatorias a campos internos: "
-        + ", ".join(missing_internal_fields)
-    )
     st.stop()
 
 if df.empty:
