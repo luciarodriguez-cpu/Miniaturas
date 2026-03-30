@@ -207,9 +207,10 @@ def generar_svg_mueble(
         z_sup: float,
         es_puerta: bool,
         angulo: float,
+        desplazamiento_frontal_mm: float = 0.0,
     ) -> None:
-        y_trasera = d
-        y_frontal = d + espesor_mm
+        y_trasera = d + max(0.0, desplazamiento_frontal_mm)
+        y_frontal = y_trasera + espesor_mm
 
         base = {
             "bbl": (0.0, y_trasera, z_inf),
@@ -234,11 +235,27 @@ def generar_svg_mueble(
         # Cara superior visible en esta proyección isométrica.
         add_polygon(target, [base["tbl"], base["tbr"], base["tfr"], base["tfl"]], clase_frente)
 
-    def _draw_front(tipo_frente: str, z_inf: float, z_sup: float) -> None:
+    def _drawer_offset_mm(indice_cajon_desde_abajo: int) -> float:
+        if indice_cajon_desde_abajo == 0:
+            return 200.0
+        if indice_cajon_desde_abajo == 1:
+            return 100.0
+        if indice_cajon_desde_abajo == 2:
+            return 50.0
+        return 0.0
+
+    def _draw_front(tipo_frente: str, z_inf: float, z_sup: float, indice_cajon_desde_abajo: int) -> None:
         if tipo_frente == "puerta":
             _agregar_prisma_frente(puertas_svg, z_inf, z_sup, es_puerta=True, angulo=math.radians(35.0))
             return
-        _agregar_prisma_frente(cajones_svg, z_inf, z_sup, es_puerta=False, angulo=0.0)
+        _agregar_prisma_frente(
+            cajones_svg,
+            z_inf,
+            z_sup,
+            es_puerta=False,
+            angulo=0.0,
+            desplazamiento_frontal_mm=_drawer_offset_mm(indice_cajon_desde_abajo),
+        )
 
     # 3) Patas.
     _draw_leg_prisms(
@@ -277,11 +294,16 @@ def generar_svg_mueble(
         )
 
         z_cursor = z0
+        indice_cajon = 0
+        tipos_cajon = {"tiroir", "bloc_coulissant", "faux_tiroir"}
         for tipo_bloque, alto_bloque in zip(bloques, alturas):
             z_next = min(z1, z_cursor + alto_bloque)
             if z_next <= z_cursor:
                 continue
-            _draw_front(tipo_bloque, z_cursor, z_next)
+            indice_apertura = indice_cajon
+            if tipo_bloque in tipos_cajon:
+                indice_cajon += 1
+            _draw_front(tipo_bloque, z_cursor, z_next, indice_apertura)
             z_cursor = z_next
 
     # 5) Solo aristas visibles útiles.
