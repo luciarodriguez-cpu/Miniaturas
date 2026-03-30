@@ -18,6 +18,10 @@ class MuebleSVGInput:
     num_baldas: int = 0
     num_puertas: int = 0
     num_cajones: int = 0
+    num_tiroirs: int = 0
+    num_blocs_coulissants: int = 0
+    num_faux_tiroirs_bandeau: int = 0
+    num_facades: int = 0
     dimensions_portes: str | list[str] | None = None
     num_patas: int = 0
     altura_patas: float = 0.0
@@ -37,6 +41,10 @@ def generar_svg_mueble(
     num_patas: int = 0,
     altura_patas: float = 0,
     tipo_mueble: str = "S",
+    num_tiroirs: int = 0,
+    num_blocs_coulissants: int = 0,
+    num_faux_tiroirs_bandeau: int = 0,
+    num_facades: int = 0,
 ) -> str:
     ancho_mm = _to_positive_float(ancho_mm, fallback=600.0)
     alto_mm = _to_positive_float(alto_mm, fallback=800.0)
@@ -44,6 +52,10 @@ def generar_svg_mueble(
     num_baldas = _to_non_negative_int(num_baldas)
     num_puertas = _to_non_negative_int(num_puertas)
     num_cajones = _to_non_negative_int(num_cajones)
+    num_tiroirs = _to_non_negative_int(num_tiroirs)
+    num_blocs_coulissants = _to_non_negative_int(num_blocs_coulissants)
+    num_faux_tiroirs_bandeau = _to_non_negative_int(num_faux_tiroirs_bandeau)
+    num_facades = _to_non_negative_int(num_facades)
     num_patas = _to_non_negative_int(num_patas)
     altura_patas = _to_non_negative_float(altura_patas)
     tipo_mueble = _normalizar_tipo(tipo_mueble)
@@ -110,7 +122,9 @@ def generar_svg_mueble(
     z0 = altura_patas_real
     z1 = z0 + h
 
-    hay_frentes = (num_puertas + num_cajones) > 0
+    legacy_total = num_cajones + num_puertas
+    total_frentes = num_facades if num_facades > 0 else legacy_total
+    hay_frentes = total_frentes > 0
 
     # 1) Caras opacas del cuerpo.
     tapa = [(0, 0, z1), (w, 0, z1), (w, d, z1), (0, d, z1)]
@@ -123,8 +137,8 @@ def generar_svg_mueble(
     if not hay_frentes:
         add_polygon(caras, frente, clase_cara)
 
-    # 2) Baldas solo para mueble abierto.
-    if not hay_frentes and num_baldas > 0:
+    # 2) Baldas solo si hay puertas.
+    if num_puertas > 0 and num_baldas > 0:
         xi0 = min(max(espesor_mm, 8.0), w * 0.2)
         xi1 = max(xi0 + 1.0, w - xi0)
         yi1 = max(espesor_mm, d - espesor_mm)
@@ -142,8 +156,6 @@ def generar_svg_mueble(
                 add_polygon(caras, [(xi0, 0, z_sup), (xi1, 0, z_sup), (xi1, yi1, z_sup), (xi0, yi1, z_sup)], clase_cara)
                 # Canto frontal visible.
                 add_polygon(caras, [(xi0, d, z_sup), (xi1, d, z_sup), (xi1, d, z_inf), (xi0, d, z_inf)], clase_cara)
-
-    # 3) Patas eliminadas de la representación.
 
     def _rotar_puerta_izquierda(x: float, y: float, angulo: float) -> tuple[float, float]:
         y_rel = y - d
@@ -184,22 +196,30 @@ def generar_svg_mueble(
         # Cara superior visible en esta proyección isométrica.
         add_polygon(target, [base["tbl"], base["tbr"], base["tfr"], base["tfl"]], clase_frente)
 
-    # 4) Frentes opacos (cajones abajo, puertas arriba).
-    total_frentes = num_cajones + num_puertas
+    def _draw_front(tipo_frente: str, z_inf: float, z_sup: float) -> None:
+        if tipo_frente == "puerta":
+            _agregar_prisma_frente(puertas_svg, z_inf, z_sup, es_puerta=True, angulo=math.radians(35.0))
+            return
+        _agregar_prisma_frente(cajones_svg, z_inf, z_sup, es_puerta=False, angulo=0.0)
+
+    # 3) Patas.
+    _draw_leg_prisms(
+        target=patas_svg,
+        tipo_mueble=tipo_mueble,
+        num_patas=num_patas,
+        altura_patas_mm=altura_patas_real,
+        ancho_mm=w,
+        fondo_mm=d,
+        add_polygon=add_polygon,
+        clase=clase_cara,
+        espesor_mm=espesor_mm,
+    )
+
+    # 4) Frentes opacos con el nuevo modelo.
     if total_frentes > 0:
         alto_util = max(40.0, h)
-        alturas = _resolver_alturas_frentes(
-            num_puertas=num_puertas,
-            num_cajones=num_cajones,
-            dimensions_portes=dimensions_portes,
-            alto_mm=alto_util,
-        )
+        alturas = _parse_dimensions_portes(dimensions_portes, total_frentes, alto_util)
 
-        if len(alturas) < total_frentes:
-            faltan = total_frentes - len(alturas)
-            alturas.extend([max(80.0, alto_util / max(1, total_frentes))] * faltan)
-
-        alturas = [_redondear_decena(a) for a in alturas[:total_frentes]]
         suma_alturas = sum(alturas)
         if suma_alturas <= 0:
             alturas = [alto_util / total_frentes for _ in range(total_frentes)]
@@ -207,18 +227,21 @@ def generar_svg_mueble(
             factor = alto_util / suma_alturas
             alturas = [a * factor for a in alturas]
 
-        bloques = (["cajon"] * num_cajones) + (["puerta"] * num_puertas)
-        z_cursor = z0
-        angulo_puerta = math.radians(35.0)
+        bloques = _build_front_stack(
+            total_frentes=total_frentes,
+            num_tiroirs=num_tiroirs,
+            num_blocs_coulissants=num_blocs_coulissants,
+            num_puertas=num_puertas,
+            num_faux_tiroirs_bandeau=num_faux_tiroirs_bandeau,
+            fallback_cajones=num_cajones,
+        )
 
+        z_cursor = z0
         for tipo_bloque, alto_bloque in zip(bloques, alturas):
             z_next = min(z1, z_cursor + alto_bloque)
             if z_next <= z_cursor:
                 continue
-            if tipo_bloque == "cajon":
-                _agregar_prisma_frente(cajones_svg, z_cursor, z_next, es_puerta=False, angulo=0.0)
-            else:
-                _agregar_prisma_frente(puertas_svg, z_cursor, z_next, es_puerta=True, angulo=angulo_puerta)
+            _draw_front(tipo_bloque, z_cursor, z_next)
             z_cursor = z_next
 
     # 5) Solo aristas visibles útiles.
@@ -269,6 +292,10 @@ def generar_svg_mueble_desde_csv_row(row: dict[str, Any]) -> str:
         num_baldas=row.get("num_baldas", 0),
         num_puertas=row.get("num_puertas", 0),
         num_cajones=row.get("num_cajones", 0),
+        num_tiroirs=row.get("num_tiroirs", 0),
+        num_blocs_coulissants=row.get("num_blocs_coulissants", 0),
+        num_faux_tiroirs_bandeau=row.get("num_faux_tiroirs_bandeau", 0),
+        num_facades=row.get("num_facades", 0),
         dimensions_portes=row.get("dimensions_portes"),
         num_patas=row.get("num_patas", 0),
         altura_patas=row.get("altura_patas", 0),
@@ -276,51 +303,106 @@ def generar_svg_mueble_desde_csv_row(row: dict[str, Any]) -> str:
     )
 
 
-def _resolver_alturas_frentes(
+def _build_front_stack(
+    total_frentes: int,
+    num_tiroirs: int,
+    num_blocs_coulissants: int,
     num_puertas: int,
-    num_cajones: int,
+    num_faux_tiroirs_bandeau: int,
+    fallback_cajones: int,
+) -> list[str]:
+    if total_frentes <= 0:
+        return []
+
+    stack = (
+        ["tiroir"] * _to_non_negative_int(num_tiroirs)
+        + ["bloc_coulissant"] * _to_non_negative_int(num_blocs_coulissants)
+        + ["puerta"] * _to_non_negative_int(num_puertas)
+        + ["faux_tiroir"] * _to_non_negative_int(num_faux_tiroirs_bandeau)
+    )
+
+    if not stack:
+        stack = ["tiroir"] * _to_non_negative_int(fallback_cajones) + ["puerta"] * _to_non_negative_int(num_puertas)
+
+    if len(stack) < total_frentes:
+        faltan = total_frentes - len(stack)
+        stack.extend(["puerta"] * min(faltan, _to_non_negative_int(num_puertas)))
+        faltan = total_frentes - len(stack)
+        if faltan > 0:
+            stack.extend(["tiroir"] * faltan)
+
+    return stack[:total_frentes]
+
+
+def _parse_dimensions_portes(
     dimensions_portes: str | list[str] | None,
+    total_frentes: int,
     alto_mm: float,
 ) -> list[float]:
-    total = num_puertas + num_cajones
-    if total <= 0:
+    if total_frentes <= 0:
         return []
 
     alturas = _parse_alturas_portes(dimensions_portes)
     if not alturas:
-        base = max(80.0, alto_mm / total)
-        return [_redondear_decena(base) for _ in range(total)]
+        base = max(80.0, alto_mm / total_frentes)
+        return [_redondear_decena(base) for _ in range(total_frentes)]
 
-    if len(alturas) < total:
-        faltan = total - len(alturas)
-        resto = max(80.0, (alto_mm - sum(alturas)) / max(1, faltan))
-        alturas.extend([_redondear_decena(resto) for _ in range(faltan)])
+    if len(alturas) > total_frentes:
+        alturas = alturas[:total_frentes]
 
-    return [max(40.0, _redondear_decena(h)) for h in alturas[:total]]
+    if len(alturas) < total_frentes:
+        faltan = total_frentes - len(alturas)
+        base = max(40.0, (alto_mm - sum(alturas)) / max(1, faltan))
+        alturas.extend([_redondear_decena(base) for _ in range(faltan)])
+
+    return [max(40.0, _redondear_decena(h)) for h in alturas[:total_frentes]]
 
 
-def _calcular_patas(
+def _draw_leg_prisms(
+    target: list[str],
     tipo_mueble: str,
     num_patas: int,
     altura_patas_mm: float,
-    x_left: float,
-    x_right: float,
-) -> list[dict[str, float]]:
+    ancho_mm: float,
+    fondo_mm: float,
+    add_polygon: Any,
+    clase: str,
+    espesor_mm: float,
+) -> None:
     if tipo_mueble != "P" or num_patas <= 0 or altura_patas_mm <= 0:
-        return []
+        return
 
-    ancho = 14.0
-    margen = 18.0
-    span = max(1.0, x_right - x_left)
+    margen = min(80.0, max(24.0, min(ancho_mm, fondo_mm) * 0.2))
+    size = max(10.0, min(espesor_mm * 0.8, 24.0))
 
-    candidatas = [
-        x_left + margen,
-        x_right - margen - ancho,
-        x_left + span * 0.34,
-        x_left + span * 0.66,
-    ]
-    posiciones = candidatas[: min(num_patas, len(candidatas))]
-    return [{"x": x, "ancho": ancho} for x in posiciones]
+    y_del = margen
+    y_tras = max(margen, fondo_mm - margen - size)
+
+    if num_patas <= 4:
+        xs = [margen, max(margen, ancho_mm - margen - size)]
+        posiciones = [(xs[0], y_del), (xs[1], y_del), (xs[0], y_tras), (xs[1], y_tras)][:num_patas]
+    else:
+        per_row = max(2, math.ceil(num_patas / 2))
+        x_min = margen
+        x_max = max(x_min, ancho_mm - margen - size)
+        if per_row == 1:
+            xs = [x_min]
+        else:
+            paso = (x_max - x_min) / (per_row - 1) if per_row > 1 else 0.0
+            xs = [x_min + i * paso for i in range(per_row)]
+        posiciones = [(x, y_del) for x in xs] + [(x, y_tras) for x in xs]
+        posiciones = posiciones[:num_patas]
+
+    z_inf = 0.0
+    z_sup = altura_patas_mm
+
+    for x, y in posiciones:
+        x2 = min(ancho_mm, x + size)
+        y2 = min(fondo_mm, y + size)
+
+        add_polygon(target, [(x, y, z_inf), (x2, y, z_inf), (x2, y2, z_inf), (x, y2, z_inf)], clase)
+        add_polygon(target, [(x, y2, z_inf), (x2, y2, z_inf), (x2, y2, z_sup), (x, y2, z_sup)], clase)
+        add_polygon(target, [(x2, y, z_inf), (x2, y2, z_inf), (x2, y2, z_sup), (x2, y, z_sup)], clase)
 
 
 def _parse_alturas_portes(dimensions_portes: str | list[str] | None) -> list[float]:
@@ -392,7 +474,10 @@ if __name__ == "__main__":
         fondo_mm=375,
         num_baldas=2,
         num_puertas=1,
-        num_cajones=2,
+        num_tiroirs=1,
+        num_blocs_coulissants=1,
+        num_faux_tiroirs_bandeau=0,
+        num_facades=3,
         dimensions_portes="450 * 200\n450 * 300\n450 * 280",
         num_patas=4,
         altura_patas=100,
