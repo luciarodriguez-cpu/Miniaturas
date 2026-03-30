@@ -305,10 +305,18 @@ def generar_svg_mueble(
             if z_sup_frente <= z_cursor:
                 z_cursor = z_next
                 continue
+            z_inf_frente = z_cursor
+            if tipo_bloque == "puerta":
+                # La puerta batiente pivota desde la arista superior trasera izquierda:
+                # su esquina superior trasera izquierda coincide con la esquina inferior
+                # frontal izquierda del canto de la tapa (x=0, y=d, z=z_tapa_inf).
+                altura_frente = z_sup_frente - z_cursor
+                z_inf_frente = max(z0, z_tapa_inf - altura_frente)
+                z_sup_frente = z_tapa_inf
             indice_apertura = indice_cajon
             if tipo_bloque in tipos_cajon:
                 indice_cajon += 1
-            _draw_front(tipo_bloque, z_cursor, z_sup_frente, indice_apertura)
+            _draw_front(tipo_bloque, z_inf_frente, z_sup_frente, indice_apertura)
             z_cursor = z_next
 
     # 5) Solo aristas visibles útiles.
