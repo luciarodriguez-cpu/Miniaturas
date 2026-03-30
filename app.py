@@ -66,11 +66,19 @@ MISSING_STRINGS = {"", "na", "n/a", "nan", "none", "null", "<na>"}
 
 
 def _normalize_column_name(name: Any) -> str:
-    normalized = str(name).replace("\n", " ")
-    normalized = re.sub(r"\s+", " ", normalized)
-    normalized = normalized.strip().lower()
+    normalized = str(name)
+
+    # limpiar caracteres invisibles
+    normalized = normalized.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    normalized = normalized.replace("\xa0", " ")  # espacio no rompible
+
+    # colapsar espacios
+    normalized = re.sub(r"\s+", " ", normalized).strip().lower()
+
+    # quitar acentos
     normalized = unicodedata.normalize("NFKD", normalized)
-    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+
     return normalized
 
 
