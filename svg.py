@@ -97,6 +97,7 @@ def generar_svg_mueble(
     clase_linea = f"s_{uid}"
 
     caras: list[str] = []
+    lateral_derecho_svg: list[str] = []
     patas_svg: list[str] = []
     base_svg: list[str] = []
     interior_svg: list[str] = []
@@ -129,30 +130,39 @@ def generar_svg_mueble(
     hay_frentes = total_frentes > 0
 
     # 1) Caras opacas del cuerpo.
+    x_panel_interior = max(0.0, w - espesor_mm)
     tapa = [(0, 0, z1), (w, 0, z1), (w, d, z1), (0, d, z1)]
-    lateral_derecho = [(w, 0, z0), (w, d, z0), (w, d, z1), (w, 0, z1)]
     # El frente visible se coloca en el lateral izquierdo de la vista (y=d).
     frente = [(0, d, z0), (w, d, z0), (w, d, z1), (0, d, z1)]
 
     base_panel = [
         (espesor_mm, 0.0, z0),
-        (max(espesor_mm, w - espesor_mm), 0.0, z0),
-        (max(espesor_mm, w - espesor_mm), d, z0),
+        (max(espesor_mm, x_panel_interior), 0.0, z0),
+        (max(espesor_mm, x_panel_interior), d, z0),
         (espesor_mm, d, z0),
     ]
 
     add_polygon(caras, tapa, clase_cara)
-    add_polygon(caras, lateral_derecho, clase_cara)
     if not hay_frentes:
         add_polygon(caras, frente, clase_cara)
 
     add_polygon(base_svg, base_panel, clase_cara)
 
+    # Lateral derecho como panel con espesor real.
+    if w > 0 and d > 0 and espesor_mm > 0:
+        lateral_exterior = [(w, 0, z0), (w, d, z0), (w, d, z1), (w, 0, z1)]
+        lateral_superior = [(x_panel_interior, 0, z1), (w, 0, z1), (w, d, z1), (x_panel_interior, d, z1)]
+        lateral_frontal = [(x_panel_interior, d, z0), (w, d, z0), (w, d, z1), (x_panel_interior, d, z1)]
+        add_polygon(lateral_derecho_svg, lateral_exterior, clase_cara)
+        add_polygon(lateral_derecho_svg, lateral_superior, clase_cara)
+        add_polygon(lateral_derecho_svg, lateral_frontal, clase_cara)
+
     # 2) Baldas solo si hay al menos una puerta abierta.
     hay_puerta_abierta = num_puertas > 0
     if hay_puerta_abierta and num_baldas > 0:
         xi0 = min(max(espesor_mm, 8.0), w * 0.2)
-        xi1 = max(xi0 + 1.0, min(w * 0.6, w - espesor_mm))
+        xi1_limite = max(xi0 + 1.0, x_panel_interior)
+        xi1 = max(xi0 + 1.0, min(w * 0.6, xi1_limite))
         yi1 = max(0.0, d - espesor_mm)
         zi0 = z0 + espesor_mm
         zi1 = z1 - espesor_mm
@@ -164,9 +174,12 @@ def generar_svg_mueble(
                 z_sup = zi0 + (i + 1) * paso
                 z_inf = min(zi1, z_sup + esp_balda)
 
-                # Solo por el hueco visible y sin atravesar el lateral derecho.
-                add_polygon(interior_svg, [(xi0, 0, z_sup), (xi1, 0, z_sup), (xi1, yi1, z_sup), (xi0, yi1, z_sup)], clase_cara)
-                add_polygon(interior_svg, [(xi0, d, z_sup), (xi1, d, z_sup), (xi1, d, z_inf), (xi0, d, z_inf)], clase_cara)
+                # Solo por el hueco visible y sin atravesar el lateral derecho interior.
+                x_fin = min(xi1, x_panel_interior)
+                if x_fin <= xi0:
+                    continue
+                add_polygon(interior_svg, [(xi0, 0, z_sup), (x_fin, 0, z_sup), (x_fin, yi1, z_sup), (xi0, yi1, z_sup)], clase_cara)
+                add_polygon(interior_svg, [(xi0, d, z_sup), (x_fin, d, z_sup), (x_fin, d, z_inf), (xi0, d, z_inf)], clase_cara)
 
     def _rotar_puerta_izquierda(x: float, y: float, angulo: float) -> tuple[float, float]:
         y_rel = y - d
@@ -260,9 +273,11 @@ def generar_svg_mueble(
     # 5) Solo aristas visibles útiles.
     aristas_visibles = [
         ((w, 0, z1), (w, d, z1)),
-        ((0, d, z1), (0, 0, z1)),
-        ((w, 0, z0), (w, d, z0)),
+        ((x_panel_interior, d, z1), (w, d, z1)),
+        ((x_panel_interior, d, z0), (w, d, z0)),
+        ((w, d, z0), (w, d, z1)),
         ((w, 0, z0), (w, 0, z1)),
+        ((0, d, z1), (0, 0, z1)),
     ]
 
     for p1, p2 in aristas_visibles:
@@ -291,6 +306,7 @@ def generar_svg_mueble(
         *caras,
         *base_svg,
         *interior_svg,
+        *lateral_derecho_svg,
         *cajones_svg,
         *puertas_svg,
         *lineas,
