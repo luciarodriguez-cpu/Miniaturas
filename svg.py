@@ -131,7 +131,11 @@ def generar_svg_mueble(
 
     # 1) Caras opacas del cuerpo.
     x_panel_interior = max(0.0, w - espesor_mm)
+    z_tapa_inf = max(z0, z1 - espesor_mm)
+    z_base_sup = min(z1, z0 + espesor_mm)
+
     tapa = [(0, 0, z1), (w, 0, z1), (w, d, z1), (0, d, z1)]
+    canto_frontal_tapa = [(0, d, z_tapa_inf), (w, d, z_tapa_inf), (w, d, z1), (0, d, z1)]
     # El frente visible se coloca en el lateral izquierdo de la vista (y=d).
     frente = [(0, d, z0), (w, d, z0), (w, d, z1), (0, d, z1)]
 
@@ -143,10 +147,24 @@ def generar_svg_mueble(
     ]
 
     add_polygon(caras, tapa, clase_cara)
+    add_polygon(caras, canto_frontal_tapa, clase_cara)
     if not hay_frentes:
         add_polygon(caras, frente, clase_cara)
 
     add_polygon(base_svg, base_panel, clase_cara)
+
+    # Canto frontal de la base (espesor visible hacia arriba).
+    if z_base_sup > z0:
+        x_base_ini = espesor_mm
+        x_base_fin = max(espesor_mm, x_panel_interior)
+        if x_base_fin > x_base_ini:
+            canto_frontal_base = [
+                (x_base_ini, d, z0),
+                (x_base_fin, d, z0),
+                (x_base_fin, d, z_base_sup),
+                (x_base_ini, d, z_base_sup),
+            ]
+            add_polygon(base_svg, canto_frontal_base, clase_cara)
 
     # Lateral derecho como panel con espesor real.
     if w > 0 and d > 0 and espesor_mm > 0:
