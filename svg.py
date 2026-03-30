@@ -300,10 +300,15 @@ def generar_svg_mueble(
             z_next = min(z1, z_cursor + alto_bloque)
             if z_next <= z_cursor:
                 continue
+            # Los frentes se alojan bajo la tapa, sin invadir su espesor.
+            z_sup_frente = min(z_next, z_tapa_inf)
+            if z_sup_frente <= z_cursor:
+                z_cursor = z_next
+                continue
             indice_apertura = indice_cajon
             if tipo_bloque in tipos_cajon:
                 indice_cajon += 1
-            _draw_front(tipo_bloque, z_cursor, z_next, indice_apertura)
+            _draw_front(tipo_bloque, z_cursor, z_sup_frente, indice_apertura)
             z_cursor = z_next
 
     # 5) Solo aristas visibles útiles.
