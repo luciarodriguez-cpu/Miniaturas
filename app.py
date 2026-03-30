@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 import pandas as pd
@@ -67,7 +68,10 @@ MISSING_STRINGS = {"", "na", "n/a", "nan", "none", "null", "<na>"}
 def _normalize_column_name(name: Any) -> str:
     normalized = str(name).replace("\n", " ")
     normalized = re.sub(r"\s+", " ", normalized)
-    return normalized.strip().casefold()
+    normalized = normalized.strip().lower()
+    normalized = unicodedata.normalize("NFKD", normalized)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    return normalized
 
 
 COLUMN_MAPPING = {
